@@ -3,9 +3,9 @@
 Contributors: NextScripts, okapy
 Donate link: https://www.nextscripts.com/social-networks-auto-poster-for-wordpress
 Tags: automation, autopost, auto-post, auto post, socialnetworks, socialnetwork, social networks, social network, Flipboard, google,  Flickr, twitter, pinterest, google my business, 500px, tumblr, blogger, blogspot, linkedin, reddit, reddit.com, plugin, links, Post, posts, api, automatic, seo, scoop.it, integration, bookmark, bookmarks, admin, images, image, social, sharing, share, repost, re-post, wordpress.com, Diigo, vBulletin, Plurk, forums, vKontakte, open graph, LiveJournal, SETT, YouTube, Telegram, xing, medium, yo, Weibo, mailchimp, line, Odnoklassniki, ok.ru
-Requires at least: 5.0
-Tested up to: 6.5.3
-Stable tag: 4.4.6
+Requires at least: 6.0
+Tested up to: 6.9.1
+Stable tag: 4.4.7
 License: GPLv2 or later
 
 Automatically publishes blogposts to profiles/pages/groups on Twitter, Google+, Pinterest, LinkedIn, Blogger, Tumblr ... 22 more
@@ -87,8 +87,8 @@ Please see <a href="https://www.nextscripts.com/installation-of-social-networks-
 
 **Requirements**
 
-Wordpress 4.0+ (6.0+ is preferred)
-PHP 5.6+ (7.4 is preferred)
+Wordpress 6.0+ (6.9+ is preferred)
+PHP 7.4+ (8.2+ is preferred)
 cURL
 Correctly working WP cron is required for some functionality (Scheduled posts, Auto reposter, Comments Import, etc...)
 
@@ -176,6 +176,13 @@ Please see more <a href="https://www.nextscripts.com/faq/">Frequently asked ques
 = Details = 
 
 == Changelog ==
+
+= 4.4.7 [26/02/2026] =
+
+* New - WordPress 6.9 compatibility.
+* Bug Fix - Possible XSS security issue [CVE-2026-3228]
+* Bug Fix - Possible XSS security issue [CVE-2024-37275]
+
 
 = 4.4.6 [11/06/2024] = 
 
