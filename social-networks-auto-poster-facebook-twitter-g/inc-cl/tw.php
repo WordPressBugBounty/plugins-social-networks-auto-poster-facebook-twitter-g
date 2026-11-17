@@ -1,6 +1,6 @@
 <?php
-//## NextScripts Twitter Connection Class
-$nxs_snapAvNts[] = array('code'=>'TW', 'lcode'=>'tw', 'name'=>'Twitter', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your account. Ability to attach images to tweets');
+//## NextScripts X/Twitter Connection Class
+$nxs_snapAvNts[] = array('code'=>'TW', 'lcode'=>'tw', 'name'=>'X/Twitter', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your account. Ability to attach images to tweets');
 
 //## V5
 
@@ -19,7 +19,7 @@ if (!class_exists('nxsAPI_TW_Native')) { class nxsAPI_TW_Native {
         $auth = 'OAuth oauth_consumer_key="'.nxs_gak($this->conn['appKey']).'", oauth_nonce="'.$nounce.'", oauth_signature="'.$signature.'", oauth_signature_method="HMAC-SHA1", oauth_timestamp="'.$ts.'", oauth_token="'.$this->conn['accessToken'].'", oauth_version="1.0"';
         $argArr = ['extraHeaders'=>['Authorization'=>$auth]]; if ($tp=='POST') { $argArr['extraHeaders']['Content-Type'] = $isMediaUpl?'multipart/form-data':'application/json; charset=UTF-8'; $argArr['flds'] = $req; }
         if (!empty($gtArr)) $reqURL = $reqURL.'?'.http_build_query($gtArr); $args = nxs_mkRmReqArgs($argArr); unset($args['headers']['Connection']);
-        if ($isMediaUpl)  $this->rq->postData = $req;  $ret = $this->rq->request($reqURL, $args);
+        if ($isMediaUpl)  $this->rq->postData = $req;  $ret = $this->rq->request($reqURL, $args); if($this->d) prr($args);
         return $ret;
     }
 
@@ -55,8 +55,8 @@ if (!class_exists('nxsAPI_TW_Native')) { class nxsAPI_TW_Native {
 //## /V5
 
 if (!class_exists("nxs_snapClassTW")) { class nxs_snapClassTW extends nxs_snapClassNT {
-    var $ntInfo = array('code'=>'TW', 'lcode'=>'tw', 'name'=>'Twitter', 'defNName'=>'', 'tstReq' => true, 'instrURL'=>'https://www.nextscripts.com/setup-installation-twitter-social-networks-auto-poster-wordpress/');
-    var $defO = array('nName'=>'', 'do'=>'1', 'twURL'=>'', 'appKey'=>'', 'appSec'=>'', 'accessToken'=>'', 'accessTokenSec'=>'', 'attchImg'=>1, 'msgFormat'=>"New post (%TITLE%) has been published on %SITENAME% - %URL%", 'imgSize'=>'original');
+    var $ntInfo = array('code'=>'TW', 'lcode'=>'tw', 'name'=>'X/Twitter', 'defNName'=>'', 'tstReq' => true, 'instrURL'=>'https://www.nextscripts.com/setup-installation-twitter-social-networks-auto-poster-wordpress/');
+    var $defO = array('nName'=>'', 'do'=>'1', 'twURL'=>'', 'appKey'=>'', 'appSec'=>'', 'accessToken'=>'', 'accessTokenSec'=>'', 'pfmAccountId'=>'', 'attchImg'=>1, 'msgFormat'=>"New post (%TITLE%) has been published on %SITENAME% - %URL%", 'imgSize'=>'original');
     //#### Update
     function toLatestVer($ntOpts){ if( !empty($ntOpts['v'])) $v = $ntOpts['v']; else $v = 340; $ntOptsOut = '';  switch ($v) {
         case 340: $ntOptsOut = $this->toLatestVerNTGen($ntOpts); $ntOptsOut['do'] = $ntOpts['do'.$this->ntInfo['code']]; $ntOptsOut['nName'] = $ntOpts['nName'];  $ntOptsOut['attchImg'] = $ntOpts['attchImg'];
@@ -72,42 +72,215 @@ if (!class_exists("nxs_snapClassTW")) { class nxs_snapClassTW extends nxs_snapCl
     //#### Show NEW Settings Page
     function showNewNTSettings($ii){ $this->showGNewNTSettings($ii, $this->defO); }
     //#### Show Unit  Settings
-    function checkIfSetupFinished($options) { return !empty($options['appKey']) && !empty($options['accessToken']); }
+    function checkIfSetupFinished($options) { return (!empty($options['appKey']) && !empty($options['accessToken'])) || !empty($options['pfmAccountId']); }
     public function doAuth() { }
 
-    function accTab($ii, $options, $isNew=false){ global $nxs_snapSetPgURL; $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; ?>
-        <div class="nxs_tls_lbl"><strong>Your <?php echo esc_attr($ntInfo['name']); ?> URL:</strong> </div><input type="text" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][twURL]" style="width: 40%;border: 1px solid #ACACAC;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['twURL'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /><br/><br/>
-        <?php $this->elemKeySecret($ii,'API Key','API Secret', $options['appKey'], $options['appSec'],'appKey','appSec','https://apps.twitter.com/');  $this->elemKeySecret($ii,'Access Token','Access Token Secret', $options['accessToken'], $options['accessTokenSec'],'accessToken','accessTokenSec'); ?>
-        <br/><?php $this->elemMsgFormat($ii,'Message Format','msgFormat',$options['msgFormat']); ?>
-        <div style="margin: 0px;"><input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][attchImg]"  <?php if ((int)$options['attchImg'] == 1) echo "checked"; ?> /> <strong><?php _e('Attach Image to the Post', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong></div>
-        <br/><br/><?php
+    function accTab($ii, $options, $isNew=false){ global $nxs_snapSetPgURL; $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; 
+        if ($isNew && !class_exists('NXS_PostSocial_Accounts')) {
+            ?>
+            <div class="nxs-tw-tabs-container">
+                <!-- Tabs Navigation -->
+                <div class="nxs-tw-tabs-nav" style="border-bottom: 1px solid #ccc; margin-bottom: 15px; display: flex; gap: 10px;">
+                    <a href="#" class="nxs-tw-tab-btn active" data-tab="connect" style="display: inline-block; padding: 10px 15px; text-decoration: none; border-bottom: 2px solid #0085ba; font-weight: bold; color: #0085ba;">Connect to X/Twitter</a>
+                    <a href="#" class="nxs-tw-tab-btn" data-tab="ownkeys" style="display: inline-block; padding: 10px 15px; text-decoration: none; border-bottom: 2px solid transparent; font-weight: bold; color: #666;">Use your own App Keys</a>
+                </div>
+                
+                <!-- Tab Contents -->
+                <div class="nxs-tw-tab-contents">
+                    <!-- Tab One: Connect to X/Twitter -->
+                    <div class="nxs-tw-tab-content" id="nxs-tw-tab-connect-<?php echo $ii; ?>" style="display: block; padding: 15px 0;">
+                        <button class="button button-primary nxs-connect-tw-btn" type="button" style="padding: 10px 20px; font-size: 14px;">Connect to X/Twitter</button>
+                        <input type="hidden" class="nxs-pfm-account-id" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][pfmAccountId]" value="" />
+                        <br/><br/>
+                    </div>
+                    
+                    <!-- Tab Two: Use your own App Keys -->
+                    <div class="nxs-tw-tab-content" id="nxs-tw-tab-ownkeys-<?php echo $ii; ?>" style="display: none; padding: 10px 0;">
+                        <div class="nxs_tls_lbl"><strong>Your <?php echo esc_attr($ntInfo['name']); ?> URL:</strong> </div>
+                        <input type="text" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][twURL]" style="width: 40%;border: 1px solid #ACACAC;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['twURL'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />
+                        <br/><br/>
+                        <?php 
+                        $this->elemKeySecret($ii, 'Consumer Key', 'Consumer Key Secret', $options['appKey'], $options['appSec'], 'appKey', 'appSec', 'https://apps.twitter.com/'); 
+                        $this->elemKeySecret($ii, 'Access Token', 'Access Token Secret', $options['accessToken'], $options['accessTokenSec'], 'accessToken', 'accessTokenSec'); 
+                        ?>
+                        <br/>
+                        <?php $this->elemMsgFormat($ii,'Message Format','msgFormat',$options['msgFormat']); ?>
+                        <div style="margin: 0px;">
+                            <input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][attchImg]"  <?php if ((int)$options['attchImg'] == 1) echo "checked"; ?> /> 
+                            <strong><?php _e('Attach Image to the Post', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong>
+                        </div>
+                        <br/><br/>
+                    </div>
+                </div>
+            </div>
+
+            <script type="text/javascript">
+            jQuery(document).ready(function() {
+                // Check if returned from PostForMe oAuth flow
+                var urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('isSuccess') === 'true' && urlParams.get('accountIds') && urlParams.get('ii') === '<?php echo $ii; ?>') {
+                    var pfmId = urlParams.get('accountIds');
+                    // Set the value in the hidden input
+                    jQuery('#nxs-tw-tab-connect-<?php echo $ii; ?> .nxs-pfm-account-id').val(pfmId);
+                    
+                    // Show a nice success message
+                    jQuery('#nxs-tw-tab-connect-<?php echo $ii; ?>').prepend(
+                        '<div class="nxs-pfm-success-notice" style="background: #e7f7ed; border-left: 4px solid #46b450; padding: 10px; margin-bottom: 15px; font-weight: bold; color: #2e7d32; display: inline-block;">' +
+                        '✓ Successfully connected! Saving settings...' +
+                        '</div>'
+                    );
+                    
+                    // Automatically save the settings block
+                    setTimeout(function() {
+                        var divIn = 'domTW<?php echo $ii; ?>Div';
+                        var loc = 'r';
+                        nxs_svSetAdv('TW', '<?php echo $ii; ?>', divIn, 'nxsTWMsgDiv<?php echo $ii; ?>', loc, '1');
+                        
+                        // Remove parameters from URL bar to prevent resaving on refresh
+                        var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?page=nxssnap';
+                        window.history.replaceState({path: newUrl}, '', newUrl);
+                    }, 1000);
+                }
+
+                jQuery('#nxs-tw-tab-connect-<?php echo $ii; ?> .nxs-connect-tw-btn').off('click').on('click', function(e) {
+                    e.preventDefault();
+                    var btn = jQuery(this);
+                    btn.prop('disabled', true).text('Connecting...');
+                    
+                    // Construct redirect URL to post.social/rauth.php
+                    var siteUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?page=nxssnap&ii=<?php echo $ii; ?>';
+                    window.location.href = 'https://post.social/rauth.php?site_url=' + encodeURIComponent(siteUrl);
+                });
+                
+                jQuery('#nxs-tw-tab-connect-<?php echo $ii; ?>').parent().parent().find('.nxs-tw-tab-btn').off('click').on('click', function(e) {
+                    e.preventDefault();
+                    var tabId = jQuery(this).attr('data-tab');
+                    var container = jQuery(this).closest('.nxs-tw-tabs-container');
+                    
+                    // Update tab buttons style
+                    container.find('.nxs-tw-tab-btn').css({
+                        'border-bottom': '2px solid transparent',
+                        'color': '#666'
+                    }).removeClass('active');
+                    
+                    jQuery(this).css({
+                        'border-bottom': '2px solid #0085ba',
+                        'color': '#0085ba'
+                    }).addClass('active');
+                    
+                    // Toggle tab content
+                    container.find('.nxs-tw-tab-content').hide();
+                    if (tabId === 'connect') {
+                        container.find('#nxs-tw-tab-connect-<?php echo $ii; ?>').show();
+                    } else {
+                        container.find('#nxs-tw-tab-ownkeys-<?php echo $ii; ?>').show();
+                    }
+                });
+            });
+            </script>
+            <?php
+        } else {
+            if (!empty($options['pfmAccountId'])) {
+                ?>
+                <div style="padding: 10px 0;">
+                    <div style="background: #e7f7ed; border-left: 4px solid #46b450; padding: 10px; margin-bottom: 15px; font-weight: bold; color: #2e7d32; display: inline-block;">
+                        ✓ Connected to X/Twitter (Account ID: <?php echo esc_html($options['pfmAccountId']); ?>)
+                    </div>
+                    <br/>
+                    <?php if (!empty($options['twURL'])) { ?>
+                        <div style="margin-bottom: 15px;">
+                            <strong>Your X/Twitter URL:</strong> 
+                            <a href="<?php echo esc_url($options['twURL']); ?>" target="_blank"><?php echo esc_html($options['twURL']); ?></a>
+                            <input type="hidden" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][twURL]" value="<?php echo esc_attr($options['twURL']); ?>" />
+                        </div>
+                    <?php } ?>
+                    <button class="button button-primary nxs-connect-tw-btn" id="nxs-connect-tw-btn-<?php echo $ii; ?>" type="button" style="padding: 10px 20px; font-size: 14px;">Reconnect to X/Twitter</button>
+                    <input type="hidden" class="nxs-pfm-account-id" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][pfmAccountId]" value="<?php echo esc_attr($options['pfmAccountId']); ?>" />
+                </div>
+
+                <script type="text/javascript">
+                jQuery(document).ready(function() {
+                    jQuery('#nxs-connect-tw-btn-<?php echo $ii; ?>').off('click').on('click', function(e) {
+                        e.preventDefault();
+                        var btn = jQuery(this);
+                        btn.prop('disabled', true).text('Connecting...');
+                        
+                        // Construct redirect URL to post.social/rauth.php
+                        var siteUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?page=nxssnap&ii=<?php echo $ii; ?>';
+                        window.location.href = 'https://post.social/rauth.php?site_url=' + encodeURIComponent(siteUrl);
+                    });
+                });
+                </script>
+                <?php
+            } else {
+                ?>
+                <div style="padding: 10px 0;">
+                    <div class="nxs_tls_lbl"><strong>Your <?php echo esc_attr($ntInfo['name']); ?> URL:</strong> </div>
+                    <input type="text" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][twURL]" style="width: 40%;border: 1px solid #ACACAC;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['twURL'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />
+                    <br/><br/>
+                    <?php 
+                    $this->elemKeySecret($ii, 'Consumer Key', 'Consumer Key Secret', $options['appKey'], $options['appSec'], 'appKey', 'appSec', 'https://apps.twitter.com/'); 
+                    $this->elemKeySecret($ii, 'Access Token', 'Access Token Secret', $options['accessToken'], $options['accessTokenSec'], 'accessToken', 'accessTokenSec'); 
+                    ?>
+                    <br/>
+                    <?php $this->elemMsgFormat($ii,'Message Format','msgFormat',$options['msgFormat']); ?>
+                    <div style="margin: 0px;">
+                        <input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][attchImg]"  <?php if ((int)$options['attchImg'] == 1) echo "checked"; ?> /> 
+                        <strong><?php _e('Attach Image to the Post', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong>
+                    </div>
+                </div>
+                <?php
+            }
+        }
     }
     function advTab($ii, $options){ $nt = $this->ntInfo['lcode']; ?><div class="nxs_tls_cpt"><?php _e('Auto Import of Replies and Mentions:', 'social-networks-auto-poster-facebook-twitter-g'); ?></div>
         <div class="nxs_tls_bd">
-            <div class="nxs_tls_sbInfo"><?php _e('Plugin could grab Replies and Mentions from Twitter and import them as Wordpress Comments', 'social-networks-auto-poster-facebook-twitter-g'); ?></div>
+            <div class="nxs_tls_sbInfo"><?php _e('Plugin could grab Replies and Mentions from X/Twitter and import them as Wordpress Comments', 'social-networks-auto-poster-facebook-twitter-g'); ?></div>
             <?php global $nxs_SNAP; $gOptions = $nxs_SNAP->nxs_options; if ( !empty($gOptions['riActive']) && $gOptions['riActive'] == '1' ) { ?>
-                <input value="1" id="riC<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riComments']) && trim($options['riComments'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riComments]"/> <b><?php _e('Import Twitter Replies', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
+                <input value="1" id="riC<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riComments']) && trim($options['riComments'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riComments]"/> <b><?php _e('Import X/Twitter Replies', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
                 <br/>
-                <input value="1" id="riCM<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riCommentsM']) && trim($options['riCommentsM'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riCommentsM]"/> <b><?php _e('Import Twitter Mentions', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
+                <input value="1" id="riCM<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riCommentsM']) && trim($options['riCommentsM'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riCommentsM]"/> <b><?php _e('Import X/Twitter Mentions', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
                 <br/>
                 <div style="margin-left: 12px;"><input value="1" id="riCM<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riCommentsMExMy']) && trim($options['riCommentsMExMy'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riCommentsMExMy]"/> <b><?php _e('Exclude Mentions from myself', 'social-networks-auto-poster-facebook-twitter-g'); ?></b></div>
                 <input value="1" id="riCA<?php echo esc_attr($ii); ?>" <?php if (!empty($options['riCommentsAA']) && trim($options['riCommentsAA'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][riCommentsAA]"/> <b><?php _e('Auto-approve imported comments', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
             <?php } else { echo "<br/>"; _e('Please activate the "Comments Import" from SNAP Settings Tab', 'social-networks-auto-poster-facebook-twitter-g'); } ?>
         </div>
-        <div class="nxs_tls_bd"><div class="nxs_tls_sbInfo"><br/>
-                <input value="1" <?php if (!empty($options['tw140']) && trim($options['tw140'])=='1') echo "checked"; ?> type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][tw140]"/> <b><?php _e('This Twitter account is still limited to 140 characters', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>
-            </div></div>
     <?php }
     //#### Set Unit Settings from POST
     function setNTSettings($post, $options){
         foreach ($post as $ii => $pval){
-            if (!empty($pval['appKey']) && !empty($pval['appKey'])){ if (!isset($options[$ii])) $options[$ii] = array(); $options[$ii] = $this->saveCommonNTSettings($pval,$options[$ii]);
+            if ((!empty($pval['appKey']) && !empty($pval['appSec'])) || !empty($pval['pfmAccountId'])){ if (!isset($options[$ii])) $options[$ii] = array(); $options[$ii] = $this->saveCommonNTSettings($pval,$options[$ii]);
                 //## Uniqe Items
                 if (isset($pval['twURL'])) $options[$ii]['twURL'] = trim($pval['twURL']);
                 if (isset($pval['accessToken'])) $options[$ii]['accessToken'] = trim($pval['accessToken']);
                 if (isset($pval['accessTokenSec'])) $options[$ii]['accessTokenSec'] = trim($pval['accessTokenSec']);
+                
+                if (isset($pval['pfmAccountId'])) {
+                    $newPfmId = trim($pval['pfmAccountId']);
+                    $oldPfmId = !empty($options[$ii]['pfmAccountId']) ? $options[$ii]['pfmAccountId'] : '';
+                    $options[$ii]['pfmAccountId'] = $newPfmId;
+                    
+                    if (!empty($newPfmId) && ($newPfmId !== $oldPfmId || empty($options[$ii]['twURL']))) {
+                        $ch = curl_init();
+                        curl_setopt($ch, CURLOPT_URL, 'https://post.social/rauth.php?action=get_account&account_id=' . $newPfmId);
+                        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        $res = curl_exec($ch);
+                        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        curl_close($ch);
+                        
+                        if ($code == 200) {
+                            $accInfo = json_decode($res, true);
+                            if (!empty($accInfo['username'])) {
+                                $options[$ii]['twURL'] = 'https://x.com/' . $accInfo['username'];
+                                if (empty($options[$ii]['nName']) || $options[$ii]['nName'] === 'X/Twitter' || $options[$ii]['nName'] === 'Twitter') {
+                                    $options[$ii]['nName'] = $accInfo['username'];
+                                }
+                            }
+                        }
+                    }
+                }
 
-                if (isset($pval['tw140'])) $options[$ii]['tw140'] = $pval['tw140']; else $options[$ii]['tw140'] = 0;
+                if (isset($options[$ii]['tw140'])) unset($options[$ii]['tw140']);
                 if (isset($pval['riComments']))      $options[$ii]['riComments'] = $pval['riComments']; else $options[$ii]['riComments'] = 0;
                 if (isset($pval['riCommentsM']))     $options[$ii]['riCommentsM'] = $pval['riCommentsM']; else $options[$ii]['riCommentsM'] = 0;
                 if (isset($pval['riCommentsMExMy']))     $options[$ii]['riCommentsMExMy'] = $pval['riCommentsMExMy']; else $options[$ii]['riCommentsMExMy'] = 0;
@@ -145,7 +318,7 @@ if (!class_exists("nxs_snapClassTW")) { class nxs_snapClassTW extends nxs_snapCl
     }
 
     function adjPreFormatWP(&$options, $postID){if (!empty($postID)) { $twLim = 280; global $nxs_SNAP;
-        $gOptions = $nxs_SNAP->nxs_options; if (!empty($gOptions['nxsHTSpace'])) $htS = $gOptions['nxsHTSpace']; else $htS = ''; if (!empty($options['tw140'])) $twLim = 140;
+        $gOptions = $nxs_SNAP->nxs_options; if (!empty($gOptions['nxsHTSpace'])) $htS = $gOptions['nxsHTSpace']; else $htS = '';
         $addParams = nxs_makeURLParams(array('NTNAME'=>$this->ntInfo['name'], 'NTCODE'=>$this->ntInfo['code'], 'POSTID'=>$postID, 'ACCNAME'=>$options['nName']));
 
         $post = get_post($postID); if(!$post) return; $twMsgFormat = $options['msgFormat']; $extInfo = ' | PostID: '.$postID." - ".$post->post_title.' |'.$options['pType'];
@@ -304,8 +477,8 @@ if (!class_exists("nxs_snapClassTW")) { class nxs_snapClassTW extends nxs_snapCl
         $impCmnts = get_post_meta($postID, 'snapImportedComments', true); if(!is_array($impCmnts)) $impCmnts =[];
         foreach ($rplL as $comment){ $cid = $comment['id']; if (trim($cid)=='' || in_array('twxcw'.$cid, $impCmnts)) continue; else $impCmnts[] = 'twxcw'.$cid;
             $commentdata = array( 'comment_post_ID' => $postID, 'comment_author' => $comment['author']['name'], 'comment_agent' => "SNAP||".str_ireplace('_normal.','_bigger.',$comment['author']['profile_image_url']),
-                'comment_author_email' => $comment['author']['username'].'@twitter.com', 'comment_author_url' => 'https://twitter.com/'.$comment['author']['username'],
-                'comment_content' => $comment['text'], 'comment_date_gmt' => date('Y-m-d H:i:s', strtotime( $comment['created_at'] ) ), 'comment_type' => '');
+                'comment_author_email' => $comment['author']['username'].'@x.com', 'comment_author_url' => 'https://x.com/'.$comment['author']['username'],
+                'comment_content' => $comment['text'], 'comment_date_gmt' => date('Y-m-d H:i:s', strtotime( $comment['created_at'] ) ), 'comment_type' => ''); prr($commentdata);
             nxs_postNewComment($commentdata, $options['riCommentsAA']=='1'); $ci++; //echo $ci;
         }
         delete_post_meta($postID, 'snapImportedComments'); add_post_meta($postID, 'snapImportedComments', $impCmnts );

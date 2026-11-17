@@ -2,31 +2,108 @@
 /*
 Plugin Name: NextScripts: Social Networks Auto-Poster
 Plugin URI: https://www.nextscripts.com/social-networks-auto-poster-for-wordpress
-Description: This plugin automatically publishes posts from your blog to your social media accounts on Twitter, FB, Telegram, LinkedIn, and 25 more networks.
+Description: This plugin automatically publishes posts from your blog to your social media accounts on X/Twitter, Facebook, Telegram, LinkedIn, and more networks.
 Author: NextScripts
-Version: 4.4.8
+Version: 4.5.1
 Author URI: https://www.nextscripts.com
 Text Domain: social-networks-auto-poster-facebook-twitter-g
 Copyright 2012-2026  NextScripts Corp
 */
 
-const NextScripts_SNAP_Version = '4.4.8'; const NextScripts_SNAP_Version_Date = 'Aug 12, 2026';
+const NextScripts_SNAP_Version = '4.5.1'; const NextScripts_SNAP_Version_Date = 'Nov 17, 2026';
 require_once "inc/nxs_functions_wp.php"; if(!defined( 'NXSSNAP_BASENAME' ) ) define( 'NXSSNAP_BASENAME', plugin_basename( __FILE__ ) );
 
 if (true===nxs_doSystemInitCheck()) {  // error_reporting(E_ALL); ini_set('display_errors', '1');
-//	$vb = get_site_option('_nxs_v5b', 0); if ($vb==1) require_once "src/smsync.php"; //## V5 Beta
-    require_once "inc/nxs_functions.php"; require_once "inc/nxs_functions_adv.php"; require_once "inc/nxs_functions_engine.php"; require_once "inc/nxs_class_http.php"; require_once "inc/nxs_class_addns.php";
+    require_once "inc/nxs_functions.php"; require_once "inc/nxs_functions_adv.php"; require_once "inc/nxs_functions_ext.php"; require_once "inc/nxs_functions_engine.php"; require_once "inc/nxs_class_http.php"; require_once "inc/nxs_class_addns.php";
     require_once "inc/nxs_class_snap.php"; require_once "inc/nxs_class_flt.php"; require_once "inc/nxs_class_mgmt.php"; require_once "inc/nxs_class_ntlist.php"; require_once "inc/nxs_class_oauth.php";
     add_filter('get_post_metadata', 'nxs_safe_post_metadata', 10, 5);
-    add_filter('is_protected_meta', function($protected, $meta_key, $meta_type){ return $meta_type === 'post' && preg_match('/^(?:snap|_snap|nxs_|_nxs_)/i', (string)$meta_key) ? true : $protected; }, 10, 3);
+    add_filter('is_protected_meta', function($protected,$meta_key,$meta_type){return $meta_type==='post'&&preg_match('/^(?:snap|_snap|nxs_|_nxs_)/i',(string)$meta_key)?true:$protected;},10,3);
     //## Some Globals and Constants
     global $nxs_snapAvNts, $nxs_SNAP, $nxs_snapSetPgURL, $nxs_snapThisPageUrl; $nxs_snapSetPgURL = nxs_get_admin_url('admin.php?page=nxssnap');
-    $nxs_current_page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : 'nxssnap'; $nxs_snapThisPageUrl = esc_url_raw(add_query_arg('page', $nxs_current_page, nxs_get_admin_url('admin.php')));
+    $nxs_current_page=isset($_GET['page'])?sanitize_key(wp_unslash($_GET['page'])):'nxssnap'; $nxs_snapThisPageUrl=esc_url_raw(add_query_arg('page',$nxs_current_page,nxs_get_admin_url('admin.php')));
     define( 'NXS_PLPATH', plugin_dir_path(__FILE__) );  define( 'NXS_PLURL', plugin_dir_url(__FILE__)); define( 'NXS_SETV', 350); global $nxs_plurl; $nxs_plurl =  NXS_PLURL; // Remove once networks upgraded
-    //## Get Available Networks
+    require_once NXS_PLPATH . 'inc/nxs_postsocial.php';
+    require_once NXS_PLPATH . 'inc/nxs_meta_direct.php';
+    //## Register Autoloader for Dynamic Network Class Loading
+    spl_autoload_register(function ($class_name) {
+        if (preg_match('/^nxs_snapClass([A-Z0-9]+)$/', $class_name, $matches)) {
+            $lcode = strtolower($matches[1]);
+            $file = NXS_PLPATH . 'inc-cl/' . $lcode . '.php';
+            if (file_exists($file)) { require_once $file; }
+        } elseif (preg_match('/^nxs_class_SNAP_([A-Z0-9]+)$/', $class_name, $matches)) {
+            $lcode = strtolower($matches[1]);
+            $file = NXS_PLPATH . 'inc-cl/' . $lcode . '.api.php';
+            if (file_exists($file)) { require_once $file; }
+        } elseif (preg_match('/^nxsAPI_([A-Z0-9]+)_Native$/', $class_name, $matches)) {
+            $lcode = strtolower($matches[1]);
+            $file = NXS_PLPATH . 'inc-cl/' . $lcode . '.php';
+            if (file_exists($file)) { require_once $file; }
+        } elseif (preg_match('/^nxsAPI_([A-Z0-9]+)$/', $class_name, $matches)) {
+            $lcode = strtolower($matches[1]);
+            $file = NXS_PLPATH . 'inc-cl/' . $lcode . '.api.php';
+            if (file_exists($file)) { require_once $file; }
+        }
+    });
+
+    //## Get Available Networks (Dynamically Registered instead of filesystem globbing)
     do_action('nxs_actBeforeGetAvNetworks');
-    if (!isset($nxs_snapAvNts) || !is_array($nxs_snapAvNts)) $nxs_snapAvNts = array(); $nxs_snapAPINts = array(); $nxs_avlblNTList = array();
-    foreach (glob(NXS_PLPATH.'inc-cl/*.php') as $filename){ require_once $filename;  $filename = explode('/', $filename); $filename = array_pop($filename); }
+    $nxs_snapAvNts = array(
+        array('code'=>'BS', 'lcode'=>'bs', 'name'=>'Bluesky', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Publish text and images to Bluesky directly with an App Password or through Post.Social'),
+        array('code'=>'BG', 'lcode'=>'bg', 'name'=>'Blogger', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'B', 'status'=>'A', 'desc'=>'Autopost to your blog. HTML is supported'),
+        array('code'=>'DA', 'lcode'=>'da', 'name'=>'deviantART (!)', 'type'=>'Image Sharing', 'ptype'=>'F', 'status'=>'B', 'desc'=>'Autopost to your blog. HTML is supported'),
+        array('code'=>'DI', 'lcode'=>'di', 'name'=>'Diigo', 'type'=>'Link Sharing/Boormarks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Auto-submit bookmark to your account'),
+        array('code'=>'FB', 'lcode'=>'fb', 'name'=>'Facebook', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Publish to a Facebook Page using your own app or Post.Social'),
+        array('code'=>'FL', 'lcode'=>'fl', 'name'=>'Flickr', 'type'=>'Image Sharing', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost images to your photostream and/or sets. Tags are supported'),
+        array('code'=>'GMB', 'lcode'=>'gmb', 'name'=>'Google Business Profile', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'P', 'status'=>'A', 'desc'=>'Create a Google Business Profile post'),
+        array('code'=>'IG', 'lcode'=>'ig', 'name'=>'Instagram', 'type'=>'Social Networks', 'ptype'=>'P', 'status'=>'A', 'desc'=>"Upload your blogpost's image to your Instagram account."),
+        array('code'=>'IP', 'lcode'=>'ip', 'name'=>'Instapaper', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your account'),
+        array('code'=>'LI', 'lcode'=>'li', 'name'=>'LinkedIn', 'type'=>'Social Networks', 'ptype'=>'B', 'status'=>'A', 'desc'=>'Publish to your profile or company page using your own app or Post.Social'),
+        array('code'=>'LJ', 'lcode'=>'lj', 'name'=>'LiveJournal', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Auto-submit your blogpost to LiveJournal blog or community. LiveJournal engine based website DreamWidth.org is also supported'),
+        array('code'=>'LN', 'lcode'=>'ln', 'name'=>'Line', 'type'=>'Messengers', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost texts, images, or links to your channel, group or chat'),
+        array('code'=>'MC', 'lcode'=>'mc', 'name'=>'MailChimp', 'type'=>'Email Marketing', 'ptype'=>'F', 'status'=>'A', 'desc'=>'One of the most popular email marketing tools. You can send your blogposts as email campaigns to specific subscribers'),
+        array('code'=>'MD', 'lcode'=>'md', 'name'=>'Medium', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your profile or publications'),
+        array('code'=>'OK', 'lcode'=>'ok', 'name'=>'ok.ru', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost text, image or share a link to your profile or group'),
+        array('code'=>'PN', 'lcode'=>'pn', 'name'=>'Pinterest', 'type'=>'Social Networks', 'ptype'=>'P', 'status'=>'A', 'desc'=>"Post your blogpost's image to your Pinterest board."),
+        array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit', 'type'=>'Link Sharing/Boormarks', 'ptype'=>'P', 'status'=>'A', 'desc'=>'Autopost to your subreddits'),
+        array('code'=>'SC', 'lcode'=>'sc', 'name'=>'Scoop.It', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your "Topics". Ability to attach your blogpost to scoop. Ability to make "Image" posts'),
+        array('code'=>'TG', 'lcode'=>'tg', 'name'=>'Telegram', 'type'=>'Messengers', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost texts, images, or links to your channel, group or chat'),
+        array('code'=>'TH', 'lcode'=>'th', 'name'=>'Threads', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Publish text and image posts to Threads through Post.Social or your own Threads app.'),
+        array('code'=>'TR', 'lcode'=>'tr', 'name'=>'Tumblr', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Create text, image, audio-link or video-link posts on your Tumblr blog.'),
+        array('code'=>'TW', 'lcode'=>'tw', 'name'=>'X/Twitter', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Autopost to your account. Ability to attach images'),
+        array('code'=>'VB', 'lcode'=>'vb', 'name'=>'vBulletin', 'type'=>'Forums', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Auto-submit your blogpost to vBulletin forums. Could create new threads or new posts'),
+        array('code'=>'VK', 'lcode'=>'vk', 'name'=>'VK.Com', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Post text, image or share a link to your profile or group page'),
+        array('code'=>'WB', 'lcode'=>'wb', 'name'=>'Weibo', 'type'=>'Social Networks', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Biggest Chinese Microblogging Service. You can post your messages and images'),
+        array('code'=>'WP', 'lcode'=>'wp', 'name'=>'WP Based Blog', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Auto-submit your blogpost to another WordPress based site. Support for any standalone WordPress and WordPress.com, Blog.com, etc..')
+    );
+    $nxs_snapAPINts = array(
+        array('code'=>'BS', 'lcode'=>'bs', 'name'=>'Bluesky'),
+        array('code'=>'BG', 'lcode'=>'bg', 'name'=>'Blogger'),
+        array('code'=>'DA', 'lcode'=>'da', 'name'=>'deviantART'),
+        array('code'=>'DI', 'lcode'=>'di', 'name'=>'Diigo'),
+        array('code'=>'FB', 'lcode'=>'fb', 'name'=>'Facebook'),
+        array('code'=>'FL', 'lcode'=>'fl', 'name'=>'Flickr'),
+        array('code'=>'GMB', 'lcode'=>'gmb', 'name'=>'Google Business Profile'),
+        array('code'=>'IG', 'lcode'=>'ig', 'name'=>'Instagram'),
+        array('code'=>'IP', 'lcode'=>'ip', 'name'=>'Instapaper'),
+        array('code'=>'LI', 'lcode'=>'li', 'name'=>'LinkedIn'),
+        array('code'=>'LJ', 'lcode'=>'lj', 'name'=>'LiveJournal'),
+        array('code'=>'LN', 'lcode'=>'ln', 'name'=>'Line'),
+        array('code'=>'MC', 'lcode'=>'mc', 'name'=>'MailChimp'),
+        array('code'=>'MD', 'lcode'=>'md', 'name'=>'Medium'),
+        array('code'=>'OK', 'lcode'=>'ok', 'name'=>'ok.ru'),
+        array('code'=>'PN', 'lcode'=>'pn', 'name'=>'Pinterest'),
+        array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit'),
+        array('code'=>'SC', 'lcode'=>'sc', 'name'=>'Scoop.It'),
+        array('code'=>'TG', 'lcode'=>'tg', 'name'=>'Telegram'),
+        array('code'=>'TH', 'lcode'=>'th', 'name'=>'Threads'),
+        array('code'=>'TR', 'lcode'=>'tr', 'name'=>'Tumblr'),
+        array('code'=>'TW', 'lcode'=>'tw', 'name'=>'X/Twitter'),
+        array('code'=>'VB', 'lcode'=>'vb', 'name'=>'vBulletin'),
+        array('code'=>'VK', 'lcode'=>'vk', 'name'=>'VK.Com'),
+        array('code'=>'WB', 'lcode'=>'wb', 'name'=>'Weibo'),
+        array('code'=>'WP', 'lcode'=>'wp', 'name'=>'WP Based Blog')
+    );
+    $nxs_avlblNTList = array();
     do_action('nxs_actAfterGetAvNetworks');
     //## MAIN
     add_action( 'init', 'nxs_initSNAP', 0 );

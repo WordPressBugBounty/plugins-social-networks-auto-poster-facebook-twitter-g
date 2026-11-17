@@ -14,7 +14,8 @@ if (!class_exists("nxs_class_SNAP_VK")) { class nxs_class_SNAP_VK {
     }
     var $postData = []; function imgUplcurl(&$handle){ curl_setopt($handle, CURLOPT_POSTFIELDS, $this->postData); echo "!x!"; }
     function nxs_uplImgtoVK($imgURL, $options){
-        $postUrl = 'https://api.vk.com/method/photos.getWallUploadServer?v='.$this->apiVer.'&gid='.(str_replace('-','',$options['pgIntID'])).'&access_token='.$options['appAuthToken'];
+        $grpID = str_replace('-','',$options['pgIntID']);
+        $postUrl = 'https://api.vk.com/method/photos.getWallUploadServer?v='.$this->apiVer.'&gid='.$grpID.'&group_id='.$grpID.'&access_token='.$options['appAuthToken'];
         $response = nxs_remote_get($postUrl);  if(is_nxs_error($response)) return "Error: URL:".$postUrl." | ". print_r($response, true); $thumbUploadUrl = $response['body'];
         if (!empty($thumbUploadUrl)) { $thumbUploadUrlObj = json_decode($thumbUploadUrl); $VKuploadUrl = $thumbUploadUrlObj->response->upload_url; }  //  prr($thumbUploadUrlObj); echo "UURL=====-----";
         if (!empty($VKuploadUrl)) {
@@ -34,7 +35,7 @@ if (!class_exists("nxs_class_SNAP_VK")) { class nxs_class_SNAP_VK {
             $ret = $rq->request($VKuploadUrl, $args); //prr($VKuploadUrl); prr($ret);
             if (is_array($ret)) $uploadResultObj = json_decode($ret['body']);
             if (!empty($uploadResultObj->server) && !empty($uploadResultObj->photo) && !empty($uploadResultObj->hash)) {
-                $postUrl = 'https://api.vk.com/method/photos.saveWallPhoto?v='.$this->apiVer.'&server='.$uploadResultObj->server.'&photo='.$uploadResultObj->photo.'&hash='.$uploadResultObj->hash.'&gid='.(str_replace('-','',$options['pgIntID'])).'&access_token='.$options['appAuthToken'];
+                $postUrl = 'https://api.vk.com/method/photos.saveWallPhoto?v='.$this->apiVer.'&server='.$uploadResultObj->server.'&photo='.$uploadResultObj->photo.'&hash='.$uploadResultObj->hash.'&gid='.$grpID.'&group_id='.$grpID.'&access_token='.$options['appAuthToken'];
                 $response = nxs_remote_get($postUrl);  if(is_nxs_error($response)) return "Error: URL:".$postUrl." | ". print_r($response, true);   //   prr($response);
                 $resultObject = json_decode($response['body']); // prr($resultObject);
                 if (isset($resultObject) && isset($resultObject->response[0]->id)) { return $resultObject->response[0]; } else { return 'Image Upload Error'; }
@@ -45,6 +46,7 @@ if (!class_exists("nxs_class_SNAP_VK")) { class nxs_class_SNAP_VK {
         //## Check settings
         if (!is_array($options)) { $badOut['Error'] = 'No Options'; return $badOut; }
         if (empty($options['imgSize'])) $options['imgSize'] = '';
+        if (($options['vkAuthFlow'] ?? '') === 'vkid' && (!class_exists('nxs_snapClassVK') || !nxs_snapClassVK::refreshVKToken($options))) { $badOut['Error'] = 'Reconnect this VK account before publishing.'; return $badOut; }
         if (!isset($options['appAuthToken']) || trim($options['appAuthToken'])=='')  { $badOut['Error'] = 'Not Configured'; return $badOut; } $options['pgIntID'] = str_replace('"','',$options['pgIntID']);
         //## Format
         if (!empty($message['pText'])) $msg = $message['pText']; else $msg = nxs_doFormatMsg($options['msgFormat'], $message); $urlToGo = (!empty($message['url']))?$message['url']:'';
@@ -58,6 +60,18 @@ if (!class_exists("nxs_class_SNAP_VK")) { class nxs_class_SNAP_VK {
         if($postType=='A') $atts[] = $urlToGo; if (is_array($atts)) $atts = implode(',', $atts); $postUrl = 'https://api.vk.com/method/wall.post?v='.$this->apiVer; $msg = strip_tags($msg);
         $postArr = array('owner_id'=>$options['pgIntID'], 'access_token'=>$options['appAuthToken'], 'from_group'=>'1', 'message'=>$msg, 'attachments'=>$atts, 'v'=>$this->apiVer);
         $hdrsArr =  nxs_getNXSHeaders('https://api.vk.com',true); $advSet = nxs_mkRemOptsArr($hdrsArr, '', $postArr); $response = nxs_remote_post($postUrl, $advSet); // prr($advSet); prr($response);
+        
+        // Handle VK API link preview crawler errors for local/private URLs
+        if (is_array($response) && !empty($response['body']) && stripos($response['body'], 'link_photo_sizing_rule') !== false) {
+            $postArr['attachments'] = '';
+            $advSet = nxs_mkRemOptsArr($hdrsArr, '', $postArr);
+            $response2 = nxs_remote_post($postUrl, $advSet);
+            if (!is_nxs_error($response2) && stripos($response2['body'], '"error":') === false) {
+                $response = $response2;
+                $badOut['Error'] .= 'Notice: Link preview attachment was skipped because VK could not crawl your local/private URL (' . $urlToGo . '). The link was posted in the message text instead.';
+            }
+        }
+
         if ( is_nxs_error($response) || (is_object($response) && (isset($response->errors))) || (is_array($response) && stripos($response['body'],'"error":')!==false )) {  $badOut['Error'] .= 'Error: '. print_r($response, true); }
         else { $respJ = json_decode($response['body'], true);  $ret = $options['pgIntID'].'_'.$respJ['response']['post_id']; }
         if (isset($ret) && $ret!='') return array('postID'=>$ret, 'isPosted'=>1, 'postURL'=>'http://vk.com/wall'.$ret, 'pDate'=>date('Y-m-d H:i:s'), 'msg'=>$badOut['Error']);

@@ -13,18 +13,21 @@ require_once('OAuth.php');
  * Tumblr OAuth class
  */
 class TumblrOAuth {
+  public $sha1_method;
+  public $consumer;
+  public $token;
   /* Contains the last HTTP status code returned. */
   public $http_code;
   /* Contains the last API call. */
   public $url;
   /* Set up the API root URL. */
-  public $host = "http://api.tumblr.com/v2/";
+  public $host = "https://api.tumblr.com/v2/";
   /* Set timeout default. */
   public $timeout = 45;
   /* Set connect timeout. */
   public $connecttimeout = 45; 
   /* Verify SSL Cert. */
-  public $ssl_verifypeer = FALSE;
+  public $ssl_verifypeer = TRUE;
   /* Respons format. */
   public $format = 'json';
   /* Decode returned json data. */
@@ -155,6 +158,28 @@ class TumblrOAuth {
       return json_decode($response);
     }
     return $response;
+  }
+
+  // NPF requests use a JSON body; OAuth 1 signs the URL and OAuth parameters.
+  function postNpf($url, $parameters, $media = null) {
+    $request = nsx_trOAuthRequest::from_consumer_and_token($this->consumer, $this->token, 'POST', $url, array());
+    $request->sign_request($this->sha1_method, $this->consumer, $this->token);
+    $authorization = preg_replace('/^Authorization:\s*/', '', $request->to_header());
+    $headers = array('Authorization' => $authorization, 'Accept' => 'application/json');
+    $body = wp_json_encode($parameters);
+    if (is_array($media)) {
+      $boundary = 'SNAPTumblr' . bin2hex(random_bytes(12));
+      $headers['Content-Type'] = 'multipart/form-data; boundary=' . $boundary;
+      $body = '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"json\"\r\nContent-Type: application/json\r\n\r\n" . $body . "\r\n";
+      $body .= '--' . $boundary . "\r\nContent-Disposition: form-data; name=\"" . $media['identifier'] . "\"; filename=\"image\"\r\nContent-Type: " . $media['mime'] . "\r\n\r\n" . $media['body'] . "\r\n--" . $boundary . "--\r\n";
+    } else $headers['Content-Type'] = 'application/json';
+    $response = nxs_remote_post($url, array('headers' => $headers, 'body' => $body, 'timeout' => $this->timeout));
+    if (is_nxs_error($response)) return (object) array('meta' => (object) array('status' => 0, 'msg' => $response->get_error_message()));
+    $this->http_code = wp_remote_retrieve_response_code($response);
+    $this->http_info = $response['response'];
+    $this->url = $url;
+    $decoded = json_decode(wp_remote_retrieve_body($response));
+    return is_object($decoded) ? $decoded : (object) array('meta' => (object) array('status' => $this->http_code, 'msg' => 'Invalid Tumblr response'));
   }
 
   /**

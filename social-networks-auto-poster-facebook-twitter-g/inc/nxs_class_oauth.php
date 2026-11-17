@@ -190,7 +190,7 @@ if (!class_exists('nxs_OAuthBaseCl')) { class nxs_OAuthBaseCl{
 		  $response = wp_safe_remote_post($url, array( 'timeout' => 45, 'redirection' => 0, 'sslverify'=>true, 'reject_unsafe_urls'=>true, 'body'=>$argsStr, 'headers' => $hdrsArr));// prr($argsStr); prr($argsT);   prr($response);
 	  }
 	  if ( is_wp_error($response) ) return $response;
-	  $this->http_code = $response['response']['code']; $body = json_decode($response['body'], true); return is_array($body) ? $body : array();
+	  $this->http_code = $response['response']['code']; $body = $response['body']; $body = nxs_safe_unserialize($body, $body); if (is_array($body)) return $body; else return json_decode($body, true);   
 	}
 	
 	private function joinParameters($parameters){ $keys = array_keys($parameters); sort($keys, SORT_STRING); $keyValuePairs = array();

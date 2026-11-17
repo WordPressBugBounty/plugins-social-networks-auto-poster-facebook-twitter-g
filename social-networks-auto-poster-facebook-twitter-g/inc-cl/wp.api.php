@@ -22,6 +22,14 @@ if (!class_exists("nxs_class_SNAP_WP")) { class nxs_class_SNAP_WP {
         return $out;
     }
 
+    function _clean_json_decode($body, $assoc = false) {
+        $json_start = strpos($body, '{');
+        if ($json_start !== false) {
+            $body = substr($body, $json_start);
+        }
+        return json_decode($body, $assoc);
+    }
+
     function _getNounce($url, $ck){ $rq = new nxsHttp; $nc = ''; $url = str_ireplace('/wp-login.php','/wp-admin/',$url);
         $argArr = ['ck'=>$ck]; $args = nxs_mkRmReqArgs($argArr); $ret = $rq->request($url, $args);
         if (stripos($ret['body'], 'var wpApiSettings')!==false) { $wpn = CutFromTo($ret['body'],'var wpApiSettings','}'); $nc = CutFromTo($wpn,'"nonce":"','"'); }
@@ -39,21 +47,30 @@ if (!class_exists("nxs_class_SNAP_WP")) { class nxs_class_SNAP_WP {
     function _doMakeExactCopy($pid, $opts){ if (empty($opts['ck'])) $opts['ck'] = [];//$pid = 102;
         $aurl = str_ireplace('/xmlrpc.php','/wp-login.php',$opts['url']); $auth = $this->_auth($aurl, $opts['uName'], $opts['uPass'], $opts['ck']); $badOut = [];
         if (!empty($auth) && is_array($auth)) {  $rq = new nxsHttp; $selfURL = get_site_url() . '/wp-json/wp/v2/posts/' . $pid;
-            //## Post Type
-            $pt = get_post_type($pid); if ($pt=='post') $ptPath = 'posts'; elseif ($pt=='page') $ptPath = 'pages';  else $ptPath = $pt;  $url = str_ireplace('/xmlrpc.php','/wp-json/wp/v2/'.$ptPath.'/',$opts['url']);
-            //## Get Post
-            $k = new WP_REST_Posts_Controller($pt); $req = new WP_REST_Request(); $request = new WP_REST_Request('GET', '/wp/v2/posts/' . $pid);
-            // $flds = ['date','date_gmt','guid','id','link','modified','modified_gmt','slug','status','type','password','permalink_template','generated_slug','title','content','author','featured_media','comment_status','ping_status','template','password','permalink_template','generated_slug','excerpt','format','meta','sticky','categories','tags'];
-            // $request->set_query_params( ['id'=>$pid, '_fields'=>$flds] );
-            // if ($pt!='post') { if (empty($request['_fields'])) $request['_fields'] = []; $request['_fields'] = array_merge($request['_fields'], $flds); }
-            $request->set_query_params(['id' => $pid, 'context'=>'edit']);
-            $res = $k->get_item($request);// prr($res); die();
-            if (empty($opts['keepDate'])) { $res->data['date'] = current_time( 'mysql' ); $res->data['date_gmt'] = current_time( 'mysql', 1 ); }
-            $res->data['meta'] = get_post_meta($pid);
-            //    $res->data['categories'] = wp_get_post_categories($pid);
-            //    $res->data['tags'] = wp_get_post_tags($pid);
-            $taxonomies = get_object_taxonomies(array('post_type' => $pt)); foreach ($taxonomies as $taxonomy) $res->data[$taxonomy] = wp_get_post_terms($pid, $taxonomy);
-            //foreach( $taxonomies as $taxonomy ) { $terms = get_terms( $taxonomy ); foreach( $terms as $term ) echo $term->name; }
+            if (empty($pid)) {
+                $pt = 'post';
+                $ptPath = 'posts';
+                $url = str_ireplace('/xmlrpc.php','/wp-json/wp/v2/'.$ptPath.'/',$opts['url']);
+                
+                $res = new stdClass();
+                $res->data = array(
+                    'title' => 'Test Post from ' . get_bloginfo('name'),
+                    'content' => 'Test Post from ' . get_bloginfo('name') . "\r\n" . home_url(),
+                    'status' => 'publish'
+                );
+            } else {
+                //## Post Type
+                $pt = get_post_type($pid); if ($pt=='post') $ptPath = 'posts'; elseif ($pt=='page') $ptPath = 'pages';  else $ptPath = $pt;  $url = str_ireplace('/xmlrpc.php','/wp-json/wp/v2/'.$ptPath.'/',$opts['url']);
+                //## Get Post
+                $k = new WP_REST_Posts_Controller($pt); $req = new WP_REST_Request(); $request = new WP_REST_Request('GET', '/wp/v2/posts/' . $pid);
+                $request->set_query_params(['id' => $pid, 'context'=>'edit']);
+                $res = $k->get_item($request);
+                if (is_wp_error($res)) { $badOut['Error'] = '-=ERROR=- ' . $res->get_error_message(); return $badOut; }
+                if (empty($res) || empty($res->data)) { $badOut['Error'] = '-=ERROR=- Could not retrieve post data'; return $badOut; }
+                if (empty($opts['keepDate'])) { $res->data['date'] = current_time( 'mysql' ); $res->data['date_gmt'] = current_time( 'mysql', 1 ); }
+                $res->data['meta'] = get_post_meta($pid);
+                $taxonomies = get_object_taxonomies(array('post_type' => $pt)); foreach ($taxonomies as $taxonomy) $res->data[$taxonomy] = wp_get_post_terms($pid, $taxonomy);
+            }
             //####################################
             //## Upload Post
             //####################################
@@ -65,41 +82,80 @@ if (!class_exists("nxs_class_SNAP_WP")) { class nxs_class_SNAP_WP {
                 $argArr = ['flds' => $imgSrc, 'ck' => $auth['ck'], 'hdrsArr' => ['X-WP-Nonce' => $auth['wpn'], 'Content-Disposition' => 'attachment; filename=zzz.jpg', 'Content-Type' => 'application/binary', 'Accept' => 'application/json']];
                 $urlM = str_ireplace('/xmlrpc.php', '/wp-json/wp/v2/media', $opts['url']); $args = nxs_mkRmReqArgs($argArr); $ret = $rq->request($urlM, $args);
                 if (!empty($ret['body'])){
-                    $resJ = json_decode($ret['body'], true);
+                    $resJ = $this->_clean_json_decode($ret['body'], true);
                     $res->data['featured_media'] = $resJ['id'];
                 }
             }
             //## 2. Push Tags and Cats
             //## 2.1 Tags
+            $tgs = array();
             if (!empty($res->data['tags'])) foreach ($res->data['tags'] as $tg){ $tgN = get_tag($tg); $tgN = $tgN->name;
                 $argArr = ['flds' => ["name"=>$tgN], 'ck' => $auth['ck'], 'hdrsArr' => ['X-WP-Nonce' => $auth['wpn'], 'Accept' => 'application/json']];
                 $urlM = str_ireplace('/xmlrpc.php', '/wp-json/wp/v2/tags', $opts['url']); $args = nxs_mkRmReqArgs($argArr); $ret = $rq->request($urlM, $args); // prr($ret); prr($args); //die();
-                if (!empty($ret['body'])){ $resJ = json_decode($ret['body'], true); $tgs[] = !empty($resJ['id'])?$resJ['id']:$resJ['data']['term_id']; }
+                if (!empty($ret['body'])){ $resJ = $this->_clean_json_decode($ret['body'], true); $tgs[] = !empty($resJ['id'])?$resJ['id']:$resJ['data']['term_id']; }
             } $res->data['tags'] = $tgs;
             //## 2.1 Cats
+            $cts = array();
             if (!empty($res->data['categories'])) foreach ($res->data['categories'] as $tg){ $tgN = get_cat_name($tg);
                 $argArr = ['flds' => ["name"=>$tgN], 'ck' => $auth['ck'], 'hdrsArr' => ['X-WP-Nonce' => $auth['wpn'], 'Accept' => 'application/json']];
                 $urlM = str_ireplace('/xmlrpc.php', '/wp-json/wp/v2/categories', $opts['url']); $args = nxs_mkRmReqArgs($argArr); $ret = $rq->request($urlM, $args);
-                if (!empty($ret['body'])){ $resJ = json_decode($ret['body'], true); $cts[] = !empty($resJ['id'])?$resJ['id']:$resJ['data']['term_id']; }
+                if (!empty($ret['body'])){ $resJ = $this->_clean_json_decode($ret['body'], true); $cts[] = !empty($resJ['id'])?$resJ['id']:$resJ['data']['term_id']; }
             } $res->data['categories'] = $cts;
             //## 3. Insert Post itself.
             $post = $res->data; unset($post['id']); //prr($res, 'RES');
             $argArr = ['flds' => $post, 'ck'=>$auth['ck'], 'hdrsArr' => ['X-WP-Nonce'=>$auth['wpn']]];
             $args = nxs_mkRmReqArgs($argArr); $ret = $rq->request($url, $args);
-            $resP = json_decode($ret['body'], true);
+            $resP = $this->_clean_json_decode($ret['body'], true);
             if (empty($resP)||empty($resP['id'])) { $badOut['Error'] .= '-=ERROR=- '.print_r($ret, true); return $badOut; }
             //prr($url, 'PT-URRL'); prr($args, 'PP-ARGS'); prr($ret, 'PP-RET'); prr($opts);
             return array('postID'=>$resP['id'], 'isPosted'=>1, 'postURL'=>$resP['link'], 'pDate'=>date('Y-m-d H:i:s'));
+        } else {
+            $badOut['Error'] = 'Authentication failed: ' . print_r($auth, true);
+            return $badOut;
         }
     }
 
     function doPostToNT($options, $message){ $badOut = array('pgID'=>'', 'isPosted'=>0, 'pDate'=>date('Y-m-d H:i:s'), 'Error'=>''); //prr($options, 'OPTS'); prr($message, 'MSSGX');
 
+        //## Auto-discover XML-RPC URL if not already containing xmlrpc.php
+        if (!empty($options['wpURL']) && stripos($options['wpURL'], 'xmlrpc.php') === false) {
+            $origURL = trim($options['wpURL']);
+            if (substr($origURL, 0, 4) !== 'http') {
+                $origURL = 'http://' . $origURL;
+            }
+            $cleanURL = rtrim($origURL, '/');
+            $discovered = false;
+            
+            // Try RSD discovery
+            $rq = new nxsHttp;
+            $args = nxs_mkRmReqArgs();
+            $ret = $rq->request($cleanURL, $args);
+            
+            if (!is_nxs_error($ret) && !empty($ret['body'])) {
+                if (preg_match('/<link\s+rel=["\']EditURI["\']\s+type=["\']application\/rsd\+xml["\']\s+title=["\']RSD["\']\s+href=["\']([^"\']+)["\']/i', $ret['body'], $matches)) {
+                    $rsd_url = $matches[1];
+                    $xmlrpc_url = strtok($rsd_url, '?');
+                    if (!empty($xmlrpc_url)) {
+                        $options['wpURL'] = $xmlrpc_url;
+                        $discovered = true;
+                    }
+                }
+            }
+            
+            // Fallback: just append /xmlrpc.php
+            if (!$discovered) {
+                $options['wpURL'] = $cleanURL . '/xmlrpc.php';
+            }
+            
+            // Save the discovered URL in settings to prevent running discovery repeatedly
+            if (function_exists('nxs_save_glbNtwrks') && isset($options['ii'])) {
+                nxs_save_glbNtwrks('wp', $options['ii'], $options['wpURL'], 'wpURL');
+            }
+        }
+
         //## Check settings
         if (!is_array($options)) { $badOut['Error'] = 'No Options'; return $badOut; }
         if (!isset($options['uName']) || trim($options['uPass'])=='') { $badOut['Error'] = 'Not Configured'; return $badOut; }
-        $options['wpURL'] = isset($options['wpURL']) ? trim($options['wpURL']) : '';
-        if (!nxs_validate_remote_url($options['wpURL'])) { $badOut['Error'] = 'The remote WordPress URL must be a public HTTPS URL.'; return $badOut; }
         $pass = (substr($options['uPass'], 0, 5)=='n5g9a'||substr($options['uPass'], 0, 5)=='g9c1a'||substr($options['uPass'], 0, 5)=='b4d7s')?nsx_doDecode(substr($options['uPass'], 5)):$options['uPass'];
         if (empty($options['imgSize'])) $options['imgSize'] = '';
         //## Check is Exact Copy
@@ -114,13 +170,16 @@ if (!class_exists("nxs_class_SNAP_WP")) { class nxs_class_SNAP_WP {
         //## Fix missing xmlrpc.php
         if (substr($options['wpURL'], -1)=='/') $options['wpURL'] = substr($options['wpURL'], 0, -1); if (substr($options['wpURL'], -10)!='xmlrpc.php') $options['wpURL'] .= "/xmlrpc.php";
         //## Post
-        require_once ('apis/xmlrpc-client.php'); $nxsToWPclient = new NXS_XMLRPC_Client($options['wpURL']); $nxsToWPclient->debug = false;
+        require_once (NXS_PLPATH . 'inc-cl/apis/xmlrpc-client.php'); $nxsToWPclient = new NXS_XMLRPC_Client($options['wpURL']); $nxsToWPclient->debug = false;
+        $gid = '';
         if ($imgURL!=='' && stripos($imgURL, 'http')!==false) {
-            // $handle = fopen($imgURL, "rb"); $filedata = ''; while (!feof($handle)) {$filedata .= fread($handle, 8192);} fclose($handle);
-            $filedata = nxs_remote_get($imgURL); if (! is_nxs_error($filedata) ) $filedata = $filedata['body'];
-            $data = array('name'  => 'image-'.$message['orID'].'.jpg', 'type'  => 'image/jpg', 'bits'  => new NXS_XMLRPC_Base64($filedata), true);
-            $status = $nxsToWPclient->query('metaWeblog.newMediaObject', $message['orID'], $options['uName'], $pass, $data);  $imgResp = $nxsToWPclient->getResponse();  $gid = $imgResp['id'];
-        } else $gid = '';
+            $filedata = nxs_remote_get($imgURL); 
+            if (! is_nxs_error($filedata) && !empty($filedata['body'])) {
+                $filedata = $filedata['body'];
+                $data = array('name'  => 'image-'.$message['orID'].'.jpg', 'type'  => 'image/jpg', 'bits'  => new NXS_XMLRPC_Base64($filedata), true);
+                $status = $nxsToWPclient->query('metaWeblog.newMediaObject', $message['orID'], $options['uName'], $pass, $data);  $imgResp = $nxsToWPclient->getResponse();  $gid = $imgResp['id'];
+            }
+        }
 
         $params = array(0, $options['uName'], $pass, array('software_version')); // prr($params);
         if (!$nxsToWPclient->query('wp.getOptions', $params)) { $ret = 'Something went wrong - '.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();} else $ret = 'OK';
@@ -131,26 +190,53 @@ if (!class_exists("nxs_class_SNAP_WP")) { class nxs_class_SNAP_WP {
         } else if ($rwpOpt<3.0)  $ret = 'XMLRPC is too OLD - '.$rwpOpt.' You need at least 3.0'; else {
 
             if ($rwpOpt>3.3){
-                $nxsToWPContent = array('title'=>$msgT, 'description'=>$msg, 'post_status'=>'draft', 'mt_excerpt'=>$ext, 'mt_allow_comments'=>1, 'mt_allow_pings'=>1, 'post_type'=>$options['pt'], 'mt_keywords'=>$message['tags'], 'categories'=>$message['catsA'], 'custom_fields' =>  '');
+                $nxsToWPContent = array('title'=>$msgT, 'description'=>$msg, 'post_status'=>'draft', 'mt_excerpt'=>$ext, 'mt_allow_comments'=>1, 'mt_allow_pings'=>1, 'post_type'=>$options['pt'], 'mt_keywords'=>$message['tags'], 'categories'=>$message['catsA'], 'custom_fields' => array());
                 $params = array(0, $options['uName'], $pass, $nxsToWPContent, true);
-                if (!$nxsToWPclient->query('metaWeblog.newPost', $params)) { $ret = 'Something went wrong - #1.1'.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();} else $ret = 'OK';
-
+                if (!$nxsToWPclient->query('metaWeblog.newPost', $params)) { 
+                    $ret = 'Something went wrong - #1.1'.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();
+                    $badOut['Error'] .= '-=ERROR=- ' . $ret;
+                    return $badOut;
+                }
+                
                 $pid = $nxsToWPclient->getResponse();
-
+                
                 if ($gid!='') {
                     $nxsToWPContent = array('post_thumbnail'=>$gid);  $params = array(0, $options['uName'], $pass, $pid, $nxsToWPContent, true);
-                    if (!$nxsToWPclient->query('wp.editPost', $params)) { $ret = 'Something went wrong #(image upload) - '.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();} else $ret = 'OK';
+                    if (!$nxsToWPclient->query('wp.editPost', $params)) { 
+                        $ret = 'Something went wrong #(image upload) - '.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();
+                        $badOut['Error'] .= '-=ERROR=- ' . $ret;
+                        return $badOut;
+                    }
                 }
                 $nxsToWPContent = array('post_status'=>'publish');  $params = array(0, $options['uName'], $pass, $pid, $nxsToWPContent, true);
-                if (!$nxsToWPclient->query('wp.editPost', $params)) { $ret = 'Something went wrong #1.2 - (PID: '.$pid.')'.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();} else $ret = 'OK';
+                if (!$nxsToWPclient->query('wp.editPost', $params)) { 
+                    $ret = 'Something went wrong #1.2 - (PID: '.print_r($pid, true).')'.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();
+                    $badOut['Error'] .= '-=ERROR=- ' . $ret;
+                    return $badOut;
+                } else {
+                    $ret = 'OK';
+                }
             } else {
-                $nxsToWPContent = array('title'=>$msgT, 'description'=>$msg, 'post_status'=>'publish', 'mt_allow_comments'=>1, 'mt_allow_pings'=>1, 'post_type'=>$options['pt'], 'mt_keywords'=>$message['tags'], 'categories'=>$message['catsA'], 'custom_fields' => '');
+                $nxsToWPContent = array('title'=>$msgT, 'description'=>$msg, 'post_status'=>'publish', 'mt_allow_comments'=>1, 'mt_allow_pings'=>1, 'post_type'=>$options['pt'], 'mt_keywords'=>$message['tags'], 'categories'=>$message['catsA'], 'custom_fields' => array());
                 $params = array(0, $options['uName'], $pass, $nxsToWPContent, true);
-                if (!$nxsToWPclient->query('metaWeblog.newPost', $params)) { $ret = 'Something went wrong - '.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();} else $ret = 'OK';
+                if (!$nxsToWPclient->query('metaWeblog.newPost', $params)) { 
+                    $ret = 'Something went wrong - '.$nxsToWPclient->getErrorCode().' : '.$nxsToWPclient->getErrorMessage();
+                    $badOut['Error'] .= '-=ERROR=- ' . $ret;
+                    return $badOut;
+                } else {
+                    $ret = 'OK';
+                }
                 $pid = $nxsToWPclient->getResponse();
             }
+            $ret = 'OK';
         }
-        if ($ret!='OK') $badOut['Error'] .= '-=ERROR=- '.print_r($ret, true); else {
+        if ($ret!='OK') {
+            $errText = print_r($ret, true);
+            if (stripos($errText, 'XML-RPC') !== false || stripos($errText, 'not found') !== false || stripos($errText, 'xmlrpc') !== false || stripos($errText, '404') !== false) {
+                $errText .= ' | Suggestion: If your WordPress site has a custom configuration, uses a subdirectory installation, or standard discovery failed, please try entering the full URL including /xmlrpc.php (e.g. https://mywebsite.com/wp/xmlrpc.php).';
+            }
+            $badOut['Error'] .= '-=ERROR=- ' . $errText;
+        } else {
             $wpURL = str_ireplace('/xmlrpc.php','',$options['wpURL']); if(substr($wpURL, -1)=='/') $wpURL=substr($wpURL, 0, -1); $wpURL .= '/?p='.$pid; return array('postID'=>$pid, 'isPosted'=>1, 'postURL'=>$wpURL, 'pDate'=>date('Y-m-d H:i:s'));
         } return $badOut;
     }

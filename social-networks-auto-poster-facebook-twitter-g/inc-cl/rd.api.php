@@ -1,36 +1,27 @@
-<?php    
-//## NextScripts Reddit Connection Class
-
+<?php
+// Official Reddit OAuth API publisher.
+require_once dirname(__DIR__).'/inc/nxs_official_connectors.php';
 $nxs_snapAPINts[] = array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit');
-
-if (!class_exists("nxs_class_SNAP_RD")) { class nxs_class_SNAP_RD {
-    
-    var $ntCode = 'RD';
-    var $ntLCode = 'rd';
-    
-    function doPost($options, $message){ if (!is_array($options)) return false; $out = array(); // return false;
-      foreach ($options as $ii=>$ntOpts) $out[$ii] = $this->doPostToNT($ntOpts, $message);
-      return $out;
-    }     
-    function doPostToNT($options, $message){ global $nxs_urlLen; $badOut = array('pgID'=>'', 'isPosted'=>0, 'pDate'=>date('Y-m-d H:i:s'), 'Error'=>'');
-      if (!class_exists("nxsAPI_RD")){ $badOut['Error'] .= "Reddit API Library not found"; return $badOut; } 
-      //## Check settings
-      if (!is_array($options)) { $badOut['Error'] = 'No Options'; return $badOut; }      
-      if (!isset($options['uName']) || trim($options['uName'])=='' || !isset($options['uPass']) || trim($options['uPass'])=='') { $badOut['Error'] = 'No username/password Found'; return $badOut; }      
-      //## Get Saved Login Info
-      if (function_exists('nxs_getOption')) { $opVal = array(); $opNm = 'nxs_snap_rd_'.sha1('nxs_snap_rd'.$options['uName'].$options['uPass']); $opVal = nxs_getOption($opNm); if (!empty($opVal) & is_array($opVal)) $options = array_merge($options, $opVal); } 
-      //## Format Post
-      if (!empty($message['pText'])) $text = $message['pText']; else $text = nxs_doFormatMsg($options['msgFormat'], $message); 
-      if (!empty($message['pTitle'])) $title = $message['pTitle']; else $title = nxs_doFormatMsg($options['msgTFormat'], $message);  $title = nsTrnc($title, 300);       
-      //## Make Post                  
-      $pass = (substr($options['uPass'], 0, 5)=='n5g9a'||substr($options['uPass'], 0, 5)=='g9c1a'||substr($options['uPass'], 0, 5)=='b4d7s')?nsx_doDecode(substr($options['uPass'], 5)):$options['uPass'];       
-      $nt = new nxsAPI_RD(); $nt->debug = false; if (!empty($options['ck'])) $nt->ck = $options['ck']; if (!empty($options['proxy'])&&!empty($options['proxyOn'])){ $nt->proxy['proxy'] = $options['proxy']['proxy']; if (!empty($options['proxy']['up'])) $nt->proxy['up'] = $options['proxy']['up']; }
-      $loginErr = $nt->connect($options['uName'], $pass);  
-      if (!$loginErr) { $ret = $nt->post($text, $title, $options['rdSubReddit'], $options['postType']=='A'?$message['url']:''); 
-        //## Save Login Info
-        if (function_exists('nxs_saveOption')) { if (empty($opVal['ck'])) $opVal['ck'] = ''; if (is_array($ret) && !empty($ret['isPosted']) && $ret['isPosted']=='1' && $opVal['ck'] != $nt->ck) { $opVal['ck'] = $nt->ck; nxs_saveOption($opNm, $opVal); } }
-      } else { $badOut['Error'] .= 'Something went wrong - '.print_r($loginErr, true); $ret = $badOut; }            
-      return $ret;
-    }      
+if (!class_exists('nxs_class_SNAP_RD')) { class nxs_class_SNAP_RD {
+    var $ntCode='RD'; var $ntLCode='rd';
+    function doPost($options,$message) { if (!is_array($options)) return false; $out=array(); foreach ($options as $ii=>$account) $out[$ii]=$this->doPostToNT($account,$message); return $out; }
+    function doPostToNT($options,$message) {
+        $error=array('isPosted'=>0,'pDate'=>date('Y-m-d H:i:s'),'Error'=>'');
+        if (!is_array($options) || empty($options['rdSubReddit'])) { $error['Error']='Subreddit is not configured.'; return $error; }
+        $subreddit=preg_replace('/^r\//','',trim($options['rdSubReddit']));
+        if (!preg_match('/^[A-Za-z0-9_]{2,21}$/',$subreddit)) { $error['Error']='Invalid subreddit name.'; return $error; }
+        $token=NXS_Official_Connectors::access_token('rd',$options);
+        if ($token==='') { $error['Error']='Reconnect Reddit using your app and OAuth.'; return $error; }
+        $title=!empty($message['pTitle'])?$message['pTitle']:nxs_doFormatMsg($options['msgTFormat'] ?? '%TITLE%',$message);
+        $text=!empty($message['pText'])?$message['pText']:nxs_doFormatMsg($options['msgFormat'] ?? '%EXCERPT%',$message);
+        $kind=($options['postType'] ?? 'A')==='T'?'self':'link';
+        $body=array('api_type'=>'json','sr'=>$subreddit,'kind'=>$kind,'title'=>nsTrnc(wp_strip_all_tags($title),300),'resubmit'=>'false');
+        if ($kind==='self') $body['text']=wp_strip_all_tags($text); else { if (empty($message['url'])) { $error['Error']='Link URL is missing.'; return $error; } $body['url']=$message['url']; }
+        $result=NXS_Official_Connectors::request('https://oauth.reddit.com/api/submit',$token,'POST',$body,'rd');
+        $errors=$result['json']['errors'] ?? array();
+        if (!empty($errors)) { $error['Error']=wp_json_encode($errors); return $error; }
+        $data=$result['json']['data'] ?? array();
+        if (empty($data['name']) || (int)($result['http_status'] ?? 0)<200 || (int)($result['http_status'] ?? 0)>=300) { $error['Error']=!empty($result['message'])?$result['message']:'Reddit did not confirm the submission.'; return $error; }
+        return array('isPosted'=>1,'postID'=>$data['name'],'postURL'=>!empty($data['url'])?$data['url']:'https://www.reddit.com/r/'.$subreddit.'/','pDate'=>date('Y-m-d H:i:s'));
+    }
 }}
-?>

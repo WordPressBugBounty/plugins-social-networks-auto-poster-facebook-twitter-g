@@ -27,16 +27,17 @@ if (!class_exists("nxs_class_SNAP_MC")) { class nxs_class_SNAP_MC {
 	  if (isset($message['imageURL'])) $imgURL = trim(nxs_getImgfrOpt($message['imageURL'], $options['imgSize'])); else $imgURL = ''; 
 	  $urlToGo = (!empty($message['url']))?$message['url']:'';
 	  
-	  $msg = nsTrnc($msg , 30000); $url = 'https://'.$options['dc'].'.api.mailchimp.com/3.0/campaigns'; $msgArr = array ("subject_line"=>$msgT,"reply_to"=>$options['fromEmail'],"from_name"=>$options['fromName']);	  
+	  $dc = isset($options['dc']) ? strtolower((string)$options['dc']) : ''; if (!preg_match('/^[a-z0-9-]+$/', $dc)) { $badOut['Error'] = 'Invalid Mailchimp data center.'; return $badOut; }
+	  $msg = nsTrnc($msg , 30000); $url = 'https://'.$dc.'.api.mailchimp.com/3.0/campaigns'; $msgArr = array ("subject_line"=>$msgT,"reply_to"=>$options['fromEmail'],"from_name"=>$options['fromName']);	  
 	  $flds = array('recipients' => array('list_id' => $options['listID']), 'settings' => $msgArr, 'type' => 'regular'); if (!empty($options['segment'])) $flds['recipients']['segment_opts'] =  array('saved_segment_id'=>(int)$options['segment']); $flds = json_encode($flds); 
 	  
-	  $hdrsArr = $this->nxs_getHeaders('https://'.$options['dc'].'.api.mailchimp.com', true); $hdrsArr['Authorization'] = 'Basic '.base64_encode('apikey:'.$options['apikey']); //prr($hdrsArr); 
-	  $advSet = nxs_mkRemOptsArr($hdrsArr, '', $flds); $ret = wp_safe_remote_post($url, $advSet); if (is_nxs_error($ret)) { $badOut = esc_html($ret->get_error_message())." - ERROR"; return $badOut; }
+	  $hdrsArr = $this->nxs_getHeaders('https://'.$dc.'.api.mailchimp.com', true); $hdrsArr['Authorization'] = 'Basic '.base64_encode('apikey:'.$options['apikey']); //prr($hdrsArr); 
+	  $advSet = nxs_mkRemOptsArr($hdrsArr, '', $flds); $ret = wp_safe_remote_post($url, $advSet); if (is_nxs_error($ret)) { $badOut['Error'] = $ret->get_error_message(); return $badOut; }       
 	  $contents = $ret['body']; $resp = json_decode($contents, true);//     prr($resp);
-	  if (is_array($resp) && !empty($resp['id'] )){ $url = 'https://'.$options['dc'].'.api.mailchimp.com/3.0/campaigns/'.$resp['id'].'/content'; $flds = array('html' => $msg); $flds = json_encode($flds);
-		$advSet = nxs_mkRemOptsArr($hdrsArr, '', $flds); $advSet['method']='PUT'; $ret = wp_safe_remote_request($url, $advSet); if (is_nxs_error($ret)) { $badOut = esc_html($ret->get_error_message())." - ERROR"; return $badOut; }
+	  if (is_array($resp) && !empty($resp['id'] )){ $campaignID = rawurlencode($resp['id']); $url = 'https://'.$dc.'.api.mailchimp.com/3.0/campaigns/'.$campaignID.'/content'; $flds = array('html' => $msg); $flds = json_encode($flds);
+		$advSet = nxs_mkRemOptsArr($hdrsArr, '', $flds); $advSet['method']='PUT'; $ret = wp_safe_remote_request($url, $advSet); if (is_nxs_error($ret)) { $badOut['Error'] = $ret->get_error_message(); return $badOut; }       
 		$contents = $ret['body']; $respX = json_decode($contents, true); //prr($respX);  
-		if (is_array($respX) && !empty($respX['plain_text'] )){ $url = 'https://'.$options['dc'].'.api.mailchimp.com/3.0/campaigns/'.$resp['id'].'/actions/send'; 
+		if (is_array($respX) && !empty($respX['plain_text'] )){ $url = 'https://'.$dc.'.api.mailchimp.com/3.0/campaigns/'.$campaignID.'/actions/send'; 
 		  $advSet = nxs_mkRemOptsArr($hdrsArr, '', $flds); $ret = wp_safe_remote_post($url, $advSet);
 		  if ($ret['response']['code']=='204') return array('postID'=>$resp['id'], 'isPosted'=>1, 'postURL'=>$resp['archive_url'], 'pDate'=>date('Y-m-d H:i:s')); else $badOut['Error'] .= 'Something went wrong - '.print_r($ret, true);
 		}

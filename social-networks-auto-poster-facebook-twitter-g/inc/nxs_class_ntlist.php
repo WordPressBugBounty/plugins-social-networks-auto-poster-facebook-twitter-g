@@ -32,19 +32,20 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
     
     public function showNTGroup() { $cbo = count($this->nt); $this->doAuth();  ?> <div class="nxs_box" onmouseover="jQuery('.addMore<?php echo esc_attr($this->ntInfo['code']); ?>').show();" onmouseout="jQuery('.addMore<?php echo esc_attr($this->ntInfo['code']); ?>').hide();">
         <div class="nxs_box_header">
-          <div class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(NXS_PLURL);?>img/<?php echo (!empty($this->ntInfo['imgcode']))?$this->ntInfo['imgcode']:$this->ntInfo['lcode']; ?>16.png);"><?php echo wp_kses($this->ntInfo['name'], wp_kses_allowed_html( 'post' )); ?>
+          <div class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(nxs_network_asset_url(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$this->ntInfo['lcode'])); ?>);"><?php echo wp_kses($this->ntInfo['name'], wp_kses_allowed_html( 'post' )); ?>
             <?php if ($cbo>1){ ?><div class="nsBigText"><?php echo '(<span id="nxsNumOfAcc_'.esc_attr($this->ntInfo['lcode']).'">'.$cbo."</span> "; _e('accounts', 'social-networks-auto-poster-facebook-twitter-g'); echo ")"; ?></div><?php } ?>
-            <span style="display: none;" class="addMore<?php echo esc_attr($this->ntInfo['code']); ?>">&nbsp;&nbsp;&nbsp;<a data-nt="<?php echo $this->ntInfo['code'].(1+max(array_keys($this->nt))); ?>" style="font-size: 12px; text-decoration: none;" href="#" class="nxs_snapAddNew">[<?php  _e('Add New', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php if (!$this->isMobile) { echo $this->ntInfo['name']; ?> <?php  _e('account', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php } ?> ]</a></span>
+            <?php if (!in_array($this->ntInfo['lcode'], array('md', 'da'), true)) { ?><span style="display: none;" class="addMore<?php echo esc_attr($this->ntInfo['code']); ?>">&nbsp;&nbsp;&nbsp;<a data-nt="<?php echo $this->ntInfo['code'].(1+max(array_keys($this->nt))); ?>" style="font-size: 12px; text-decoration: none;" href="#" class="nxs_snapAddNew">[<?php  _e('Add New', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php if (!$this->isMobile) { echo $this->ntInfo['name']; ?> <?php  _e('account', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php } ?> ]</a></span><?php } ?>
           </div>
         </div>
-        <div class="nxs_box_inside"><?php $jj = 0;  if(!$this->checkIfFunc()) echo $this->noFuncMsg; else {  uasort($this->nt, 'nxsLstSort'); 
-            foreach ($this->nt as $indx=>$pbo){ $jj++; if (!function_exists('nxs_doSMAS1') && $jj>1) break; $pbo['jj']=$jj; $pbo['cbo']=$cbo; if ($indx!=='') $this->showNTLine($indx, $pbo); }
-          } if ($jj>7) { ?> <div style="padding-left:5px;padding-top:5px;"><a href="#" onclick="jQuery('.showMore<?php echo esc_attr($this->ntInfo['code']); ?>').show(); jQuery(this).parent().hide(); return false;">Show <?php echo $jj;?> More[<?php echo ($cbo-5); ?>]</a></div>  <?php } ?>        
+        <div class="nxs_box_inside"><?php $jj = 0; $directShown = 0; $nativeAvailable = $this->checkIfFunc(); $hasDirect = false; foreach ($this->nt as $accountCheck) if (!class_exists('NXS_PostSocial_Accounts') || !NXS_PostSocial_Accounts::is_account($accountCheck)) { $hasDirect = true; break; } if (!$nativeAvailable && $hasDirect) echo $this->noFuncMsg; uasort($this->nt, 'nxsLstSort');
+            foreach ($this->nt as $indx=>$pbo){ $isPostSocialAccount = class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($pbo); if (!$nativeAvailable && !$isPostSocialAccount) continue; if (!$isPostSocialAccount && !function_exists('nxs_doSMAS1') && $directShown>0) continue; if (!$isPostSocialAccount) $directShown++; $jj++; $pbo['jj']=$jj; $pbo['cbo']=$cbo; if ($indx!=='') $this->showNTLine($indx, $pbo); }
+          if ($jj>7) { ?> <div style="padding-left:5px;padding-top:5px;"><a href="#" onclick="jQuery('.showMore<?php echo esc_attr($this->ntInfo['code']); ?>').show(); jQuery(this).parent().hide(); return false;">Show <?php echo $jj;?> More[<?php echo ($cbo-5); ?>]</a></div>  <?php } ?>
         </div>
       </div> <?php
     }
     public function showNTLine($indx, $pbo) { if (!isset($pbo['aName'])) $pbo['aName'] = ''; if (!isset($pbo['do']) && isset($pbo['do'.$this->ntInfo['code']])) $pbo['do'] = $pbo['do'.$this->ntInfo['code']]; $jj = $pbo['jj']; $cbo = $pbo['cbo']; 
-      if (empty($pbo['nName'])) $pbo['nName'] = $this->makeUName($pbo, $indx); if (empty($pbo[$this->ntInfo['lcode'].'OK'])) $pbo[$this->ntInfo['lcode'].'OK'] = $this->checkIfSetupFinished($pbo); ?>
+      $isPostSocial = class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($pbo);
+      if (empty($pbo['nName'])) $pbo['nName'] = $this->makeUName($pbo, $indx); if (empty($pbo[$this->ntInfo['lcode'].'OK'])) $pbo[$this->ntInfo['lcode'].'OK'] = $isPostSocial ? !empty($pbo['postsocial_can_publish']) : $this->checkIfSetupFinished($pbo); ?>
       <div id="dom<?php echo esc_attr($this->ntInfo['code'].$indx); ?>Div" style="padding-bottom: 3px;<?php echo ($cbo>7 && $jj>5)?'display:none;" class="nxs_ntGroupWrapper showMore'.$this->ntInfo['code'].'"':'"  class="nxs_ntGroupWrapper"'; ?>  onmouseover="jQuery('.showInlineMenu<?php echo $this->ntInfo['code'].$indx; ?>').show();jQuery(this).addClass('nxsHiLightBorder');" onmouseout="jQuery('.showInlineMenu<?php echo $this->ntInfo['code'].$indx; ?>').hide();jQuery(this).removeClass('nxsHiLightBorder');"">
         <div style="margin:0px;margin-left:5px;"> <img id="<?php echo $this->ntInfo['code'].$indx;?>LoadingImg" style="display: none;" src='<?php echo NXS_PLURL; ?>img/ajax-loader-sm.gif' />
           <?php if ((int)$pbo['do'] > 0 && ((isset($pbo['fltrsOn']) && (int)$pbo['fltrsOn'] == 1))) { $fltInfo = nxsAnalyzePostFilters($pbo['fltrs']); ?> 
@@ -54,41 +55,43 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
             <input value="1" name="<?php echo $this->ntInfo['lcode']; ?>[<?php echo $indx; ?>][do]" type="checkbox" data-nxsid="<?php echo $this->ntInfo['lcode'].'-'.$indx; ?>" class="nxs_acctcb" <?php if ((int)$pbo['do'] > 0) echo "checked"; ?> />             
           <?php } ?>              
             <?php if (!$this->isMobile) {?>
-            <strong><?php _e('Auto-publish to', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php echo esc_html($this->ntInfo['name']); ?> <i style="color: #005800;"><?php if($pbo['nName']!='') echo '('.esc_html($pbo['nName']).')'; ?></i></strong>
+            <strong><?php _e('Auto-publish to', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php echo $this->ntInfo['name']; ?> <i style="color: #005800;"><?php if($pbo['nName']!='') echo "(".$pbo['nName'].")"; ?></i></strong>
             <?php } else {?>
-            <strong><b style="color: #005800;"><?php echo esc_html((!empty($pbo['nName']))?$pbo['nName']:($this->ntInfo['name']." #".$indx)); ?></b></strong>
+            <strong><b style="color: #005800;"><?php echo (!empty($pbo['nName']))?$pbo['nName']:($this->ntInfo['name']." #".$indx); ?></b></strong>
             <?php }?>            
-            &nbsp;&nbsp;<?php if ($this->ntInfo['tstReq'] && empty($pbo[$this->ntInfo['lcode'].'OK'])){ ?><b style="color: #800000"><?php  _e('Attention required. Unfinished setup', 'social-networks-auto-poster-facebook-twitter-g'); ?> ==&gt;</b><?php } ?>              
+            &nbsp;&nbsp;<?php if (($isPostSocial || $this->ntInfo['tstReq']) && empty($pbo[$this->ntInfo['lcode'].'OK'])){ ?><b style="color: #800000"><?php echo esc_html($isPostSocial && !empty($pbo['postsocial_status_message']) ? $pbo['postsocial_status_message'] : __('Attention required. Unfinished setup', 'social-networks-auto-poster-facebook-twitter-g')); ?> ==&gt;</b><?php } ?>
+            <?php if ($isPostSocial) { ?><span style="color:#646970">[<?php esc_html_e('Post.Social', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</span><?php } ?>
             <span style="padding-left: 0px; display: none;" class="showInlineMenu<?php echo $this->ntInfo['code'].$indx; ?>"> <?php echo $this->isMobile?'<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;':''; ?>
             <a id="do<?php echo $this->ntInfo['code'].$indx; ?>AG" href="#" onclick="doGetHideNTBlock('<?php echo esc_attr($this->ntInfo['code']);?>' , '<?php echo $indx; ?>');return false;">[<?php  _e('Show Settings', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;          
-            <a href="#" onclick="doDelAcct('<?php echo esc_js($this->ntInfo['lcode']); ?>', '<?php echo absint($indx); ?>', '<?php if (isset($pbo['bgBlogID'])) echo esc_js($pbo['nName']); ?>');return false;">[<?php  _e('Remove', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;          
-            <?php global $nxs_SNAP; if ($nxs_SNAP->sMode['l']!='F') { ?>
-              <a href="#" onclick="doDuplAcct('<?php echo esc_js($this->ntInfo['lcode']); ?>', '<?php echo absint($indx); ?>', '<?php if (isset($pbo['bgBlogID'])) echo esc_js($pbo['nName']); ?>');return false;">[<?php  _e('Duplicate', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>
+            <a href="#" onclick="doDelAcct('<?php echo $this->ntInfo['lcode']; ?>', '<?php echo $indx; ?>', '<?php if (isset($pbo['bgBlogID'])) echo $pbo['nName']; ?>');return false;">[<?php  _e('Remove', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;          
+            <?php global $nxs_SNAP; if ($nxs_SNAP->sMode['l']!='F' && !in_array($this->ntInfo['lcode'], array('md', 'da'), true)) { ?>
+              <a href="#" onclick="doDuplAcct('<?php echo $this->ntInfo['lcode']; ?>', '<?php echo $indx; ?>', '<?php if (isset($pbo['bgBlogID'])) echo $pbo['nName']; ?>');return false;">[<?php  _e('Duplicate', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>
             <?php } ?></span>
         </div><div id="nxsNTSetDiv<?php echo $this->ntInfo['code'].$indx; ?>"></div> 
       </div><?php 
     }
        
     function showNoAPIMsg($ii, $options){ ?> <div id="do<?php echo $this->ntInfo['code'].$ii; ?>Div" class="insOneDiv<?php echo " clNewNTSets"; ?>"><div style="border: 2px solid darkred; padding: 25px 15px 15px 15px; margin: 3px; background-color: #fffaf0;"> 
-            <span style="font-size: 16px; color:darkred;line-height: 24px;"><?php global $nxs_apiLInfo; if (!empty($this->ntInfo) && $this->ntInfo['code']=='IG' && !empty($nxs_apiLInfo) && $nxs_apiLInfo['noIG']==true) echo $this->noFuncMsg2; else echo $this->noFuncMsg; ?></span><br/><a href="https://www.nextscripts.com/faq/third-party-libraries-autopost-google-pinterest/" target="_blank">More info about third party libraries.</a><br/><hr/> <div style="font-size: 16px; color:#005800; font-weight: bold; margin-top: 12px; margin-bottom: 7px;">You can get this API library from NextScripts.</div>
-            <div style="padding-bottom: 5px;"><a href="https://www.nextscripts.com/snap-api/">SNAP Premium API libraries package</a> adds autoposting to:</div> <span class="nxs_txtIcon nxs_ti_gp">Google My Business</span>, <span class="nxs_txtIcon nxs_ti_pn">Pinterest</span>, <span class="nxs_txtIcon nxs_ti_rd">Reddit</span>, &nbsp;&nbsp;<span class="nxs_txtIcon nxs_ti_yt">YouTube</span>,&nbsp;&nbsp;<span class="nxs_txtIcon nxs_ti_fp">Flipboard</span>, <span class="nxs_txtIcon nxs_ti_li">LinkedIn Groups</span>, etc...<br><br>
-            <div style="padding-bottom: 10px; padding-top: 7px;" align="center">            
-<b style="color: #008000">[Limited Time Only Offer]</b><br/> Get Multiple Accounts Addon for <b>Free</b> with the order of Premium API for WordPress</div>
-            <div align="center"><a target="_blank" href="https://www.nextscripts.net/offers" class="NXSButton" id="nxs_snapUPG">Get Multiple Accounts Addon with Premium API</a></div>
-            <div style="font-size: 10px; margin-top: 20px;">*If you already have API, please follow instructions from the readme.txt file.</div>
+            <span style="font-size: 16px; color:darkred;line-height: 24px;"><?php global $nxs_apiLInfo; if (!empty($this->ntInfo) && $this->ntInfo['code']=='IG' && !empty($nxs_apiLInfo) && $nxs_apiLInfo['noIG']==true) echo $this->noFuncMsg2; else echo $this->noFuncMsg; ?></span>
           </div> </div> <?php 
     }
     
     
-    public function showGNewNTSettings($ii,$options) { ?><div id="dom<?php echo $this->ntInfo['code'].$ii; ?>Div"> <?php if(!$this->checkIfFunc()) $this->showNoAPIMsg($ii,$options); else $this->showNTSettings($ii, $options, true);  ?></div> <?php }
+    public function showGNewNTSettings($ii,$options) { ?><div id="dom<?php echo $this->ntInfo['code'].$ii; ?>Div"><?php
+        $directAvailable = $this->checkIfFunc();
+        $postSocialAvailable = class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::network_can_authorize($this->ntInfo['lcode']);
+        if (!$directAvailable && !$postSocialAvailable) $this->showNoAPIMsg($ii,$options);
+        else $this->showNTSettings($ii, $options, true, $directAvailable);
+    ?></div> <?php }
     public function showNewNTSettings($mgpo) { 
                         
     }
     public function makeUName($options, $ii) { return $this->ntInfo['name']." #".$ii; } 
-    public function showNTSettings($ii, $options, $isNew=false) { $nt = $this->ntInfo['lcode']; $ntU = $this->ntInfo['code']; $isFin = $this->checkIfSetupFinished($options); ?> 
+    public function showNTSettings($ii, $options, $isNew=false, $directAvailable=true) { if (!$isNew && class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($options)) { NXS_PostSocial_Accounts::render_account_settings($this->ntInfo, $ii, $options, $this); return; } $nt = $this->ntInfo['lcode']; $ntU = $this->ntInfo['code']; $isFin = $this->checkIfSetupFinished($options); $postSocialTabs = $isNew && class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::network_can_authorize($nt); if ($postSocialTabs) { $this->showDualMethodNewSettings($ii, $options, $directAvailable); return; } ?>
       <div id="do<?php echo $this->ntInfo['code'].$ii; ?>Div" class="insOneDiv<?php if ($isNew) echo " clNewNTSets"; ?>">   <input type="hidden" name="apDoS<?php echo $this->ntInfo['code'].$ii; ?>" value="0" id="apDoS<?php echo $this->ntInfo['code'].$ii; ?>" />
         <?php if ($isNew) { ?>    <input type="hidden" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][do]" value="1" id="apDoNew<?php echo $this->ntInfo['code'].$ii; ?>" /> <?php } ?>
-        <div class="nsx_iconedTitle" style="float: right; max-width: 392px; text-align: right; background-image: url(<?php echo NXS_PLURL; ?>img/<?php echo (!empty($this->ntInfo['imgcode']))?$this->ntInfo['imgcode']:$nt; ?>16.png);"><a style="font-size: <?php echo !$isFin?'13':'12'; ?>px;" target="_blank"  href="<?php echo $this->ntInfo['instrURL'];?>"><?php  printf( __( 'Detailed %s Configuration Instructions', 'social-networks-auto-poster-facebook-twitter-g' ), $this->ntInfo['name']); ?></a>
+        <?php if (!$directAvailable) { $this->showNoAPIMsg($ii, $options); } else { ?>
+        <div class="nsx_iconedTitle" style="float: right; max-width: 392px; text-align: right; background-image: url(<?php echo esc_url(nxs_network_asset_url(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$nt)); ?>);"><a style="font-size: <?php echo !$isFin?'13':'12'; ?>px;" target="_blank"  href="<?php echo $this->ntInfo['instrURL'];?>"><?php  printf( __( 'Detailed %s Configuration Instructions', 'social-networks-auto-poster-facebook-twitter-g' ), $this->ntInfo['name']); ?></a>
         </div><?php if (!$isFin) { ?><div style="text-align: end;" ><img src="<?php echo NXS_PLURL; ?>img/arrow_r_green_c1.png" /></div><?php } ?>
         <?php if (empty($options['nName'])) $options['nName'] = $this->makeUName($options, $ii); ?>
         <div style="width:100%;"><strong><?php _e('Account Nickname', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong>&nbsp;<i><?php _e('Just so you can easily identify it', 'social-networks-auto-poster-facebook-twitter-g'); ?></i></div>
@@ -100,7 +103,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
           <?php if (!$isNew) { ?>  <li><a id="nsx<?php echo $nt.$ii ?>_tabAdv" href="#nsx<?php echo $nt.$ii ?>_tab2"><?php _e('Advanced', 'social-networks-auto-poster-facebook-twitter-g'); ?></a></li>  <?php } ?>        
         </ul>
         <div class="nsx_tab_container"><?php /* ######################## Account Tab ####################### */ ?>
-          <div id="nsx<?php echo $nt.$ii ?>_tab1" class="nsx_tab_content" style="background-image: url(<?php echo NXS_PLURL; ?>img/<?php echo (!empty($this->ntInfo['imgcode']))?$this->ntInfo['imgcode']:$nt; ?>-bg.png); background-repeat: no-repeat;  background-position:90% 10%;">
+          <div id="nsx<?php echo $nt.$ii ?>_tab1" class="nsx_tab_content" style="background-image: url(<?php echo esc_url(nxs_network_asset_url(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$nt,true)); ?>); background-repeat: no-repeat;  background-position:90% 10%;">
             
             <?php 
               if (method_exists($this, 'showConn')) $this->showConn($ii, $options, $isNew);  
@@ -122,7 +125,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
         
         
         <div class="submitX nxclear" style="padding-bottom: 0px;">
-      <input type="button" id="svBtn<?php echo esc_attr($nt.$ii); ?>" onclick="nxs_svSetAdv('<?php echo esc_js($nt); ?>', '<?php echo esc_js($ii); ?>', '<?php echo esc_js($isNew?'dom'.$ntU.$ii.'Div':'nxsAllAccntsDiv'); ?>','nxs<?php echo esc_js($ntU); ?>MsgDiv<?php echo esc_js($ii); ?>','<?php echo $isNew?'r':''; ?>','1'); return false;" class="button-primary" value="<?php echo esc_attr($isNew?__('Add Account', 'nxs_snap'):__('Update Account Info', 'nxs_snap')); ?>" />
+          <input type="button" id="svBtn<?php echo $nt.$ii ?>" onclick="nxs_svSetAdv('<?php echo esc_attr($nt); ?>', '<?php echo esc_attr($ii); ?>', '<?php echo $isNew?'dom'.$ntU.$ii.'Div':'nxsAllAccntsDiv'; ?>','nxs<?php echo $ntU; ?>MsgDiv<?php echo esc_attr($ii); ?>','<?php echo $isNew?'r':''; ?>','1'); return false;" class="button-primary" value="<?php echo $isNew?__('Add Account', 'nxs_snap'):__('Update Account Info', 'nxs_snap'); ?>" />            
       
           <div id="nxsSaveLoadingImg<?php echo esc_attr($nt.$ii); ?>" class="doneMsg">Saving.....</div> <div id="doneMsg<?php echo esc_attr($nt.$ii); ?>" class="doneMsg">Done</div>
           <?php if ($isNew) {  ?><input style="float: right;" type="button" onclick="jQuery.pgwModal('close');" class="button-primary" value="<?php _e('Close', 'social-networks-auto-poster-facebook-twitter-g') ?>" /><?php }  ?>
@@ -130,8 +133,78 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
             <div style="float: right; display: block; clear: both; font-size: 10px; position: relative; bottom: -10px;">NextScripts <?php echo $this->ntInfo['name'].' '.$nxs_apiLInfo[$this->ntInfo['l']];?></div>
           <?php } ?>
         </div>    
-                    
+        <?php } ?>
       </div><?php         
+    }
+    /** New accounts keep their publishing options outside the connection method tabs. */
+    private function showDualMethodNewSettings($ii, $options, $directAvailable) {
+        $nt = $this->ntInfo['lcode']; $ntU = $this->ntInfo['code'];
+        $methodId = 'nxs-add-method-' . sanitize_html_class($ntU . $ii);
+        $suggestedName = $this->makeUName($options, $ii);
+        if (empty($options['nName'])) $options['nName'] = $suggestedName;
+        $connection = ''; $publishing = '';
+        if ($directAvailable) {
+            if (method_exists($this, 'showConn')) {
+                ob_start(); $this->showConn($ii, $options, true); $connection = ob_get_clean();
+                if (method_exists($this, 'showPostSettings')) {
+                    ob_start(); $this->showPostSettings($ii, $options, true); $publishing = ob_get_clean();
+                }
+            } elseif ($nt === 'tw') {
+                ob_start(); ?>
+                <p><strong><?php esc_html_e('Your X/Twitter URL', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong><br><input type="url" name="tw[<?php echo esc_attr($ii); ?>][twURL]" value="<?php echo esc_attr($options['twURL'] ?? ''); ?>" style="width:50%"></p>
+                <?php $this->elemKeySecret($ii, 'Consumer Key', 'Consumer Key Secret', $options['appKey'] ?? '', $options['appSec'] ?? '', 'appKey', 'appSec', 'https://apps.twitter.com/');
+                $this->elemKeySecret($ii, 'Access Token', 'Access Token Secret', $options['accessToken'] ?? '', $options['accessTokenSec'] ?? '', 'accessToken', 'accessTokenSec');
+                $connection = ob_get_clean();
+                ob_start(); $this->elemMsgFormat($ii, 'Message Format', 'msgFormat', $options['msgFormat'] ?? ''); ?>
+                <p><label><input type="checkbox" name="tw[<?php echo esc_attr($ii); ?>][attchImg]" value="1" <?php checked(!empty($options['attchImg'])); ?>> <?php esc_html_e('Attach Image to the Post', 'social-networks-auto-poster-facebook-twitter-g'); ?></label></p>
+                <?php $publishing = ob_get_clean();
+            } elseif (method_exists($this, 'accTab')) {
+                ob_start(); $this->accTab($ii, $options, true); $all = ob_get_clean();
+                $markers = array('fb' => '<div class="nxsMsgFormatDiv"', 'li' => '<div class="nxsMsgFormatDiv"', 'pn' => '<p><label>Default image URL', 'gmb' => '<p><label>Post type', 'rd' => '<p><label><input type="radio" name="rd');
+                $offset = isset($markers[$nt]) ? strpos($all, $markers[$nt]) : false;
+                if ($offset !== false) { $connection = substr($all, 0, $offset); $publishing = substr($all, $offset); }
+                else $connection = $all;
+            }
+        }
+        if ($publishing === '') {
+            ob_start(); NXS_PostSocial_Accounts::render_new_publishing_settings($nt, $ii, $options, $this); $publishing = ob_get_clean();
+        }
+        ?>
+        <div id="do<?php echo esc_attr($ntU . $ii); ?>Div" class="insOneDiv clNewNTSets nxs-dual-method-account">
+          <input type="hidden" name="apDoS<?php echo esc_attr($ntU . $ii); ?>" value="0" id="apDoS<?php echo esc_attr($ntU . $ii); ?>">
+          <input type="hidden" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][do]" value="1" id="apDoNew<?php echo esc_attr($ntU . $ii); ?>">
+          <div class="nxs-connection-box" style="border:1px solid #c3c4c7;background:#fff;padding:16px;margin-bottom:16px">
+            <h3 style="margin:0 0 12px"><?php esc_html_e('Connection', 'social-networks-auto-poster-facebook-twitter-g'); ?></h3>
+            <div class="nxs-add-method-choice" id="<?php echo esc_attr($methodId); ?>">
+              <p class="description" style="font-size:13px;margin:4px 0 12px"><?php esc_html_e('Choose the connection method that best fits your needs:', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
+              <div class="nxs-add-method-tabs" style="display:flex;flex-wrap:wrap;gap:10px;border-bottom:1px solid #ccc;margin-bottom:16px">
+                <a href="#" class="nxs-add-method-tab active" data-method="postsocial" style="display:inline-block;padding:10px 15px;text-decoration:none;border-bottom:2px solid #008a20;font-weight:bold;color:#008a20"><?php esc_html_e('Cloud Connection', 'social-networks-auto-poster-facebook-twitter-g'); ?></a>
+                <?php if ($directAvailable): ?><a href="#" class="nxs-add-method-tab" data-method="direct" style="display:inline-block;padding:10px 15px;text-decoration:none;border-bottom:2px solid transparent;font-weight:bold;color:#666"><?php esc_html_e('Use Your Own App / Keys', 'social-networks-auto-poster-facebook-twitter-g'); ?></a><?php endif; ?>
+              </div>
+              <div class="nxs-add-method-panel" data-method-panel="postsocial"><?php NXS_PostSocial_Accounts::render_add_method($this->ntInfo, $ii); ?></div>
+              <?php if ($directAvailable): ?><div class="nxs-add-method-panel" data-method-panel="direct" hidden>
+                <?php NXS_PostSocial_Accounts::render_direct_method_notice($nt, $this->ntInfo['name']); echo $connection; ?>
+              </div><?php endif; ?>
+            </div>
+          </div>
+          <div class="nxs-account-settings-box" style="border:1px solid #c3c4c7;background:#fff;padding:16px">
+            <h3 style="margin:0 0 12px"><?php esc_html_e('Account Settings', 'social-networks-auto-poster-facebook-twitter-g'); ?></h3>
+            <p><label><strong><?php esc_html_e('Account Nickname', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong><br><input name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][nName]" id="<?php echo esc_attr($nt); ?>nName<?php echo esc_attr($ii); ?>" class="nxAccEdElem nxs-add-account-nickname" data-suggested="<?php echo esc_attr($suggestedName); ?>" value="<?php echo esc_attr($options['nName']); ?>" style="font-weight:bold;color:#005800;width:50%"></label></p>
+            <div class="nxs-add-publishing-settings"><?php echo $publishing; ?></div>
+            <?php if ($directAvailable): ?><div class="nxs-direct-save" hidden>
+              <?php if ($nt === 'ig' || $nt === 'th'): ?>
+                <input type="button" id="svBtn<?php echo esc_attr($nt . $ii); ?>" onclick="<?php echo $nt === 'ig' ? 'nxsMetaDirectConnect' : 'nxsMetaDirectConnectTH'; ?>(<?php echo $nt === 'ig' ? "'ig'," : ''; ?>'<?php echo esc_js($ii); ?>');return false;" class="button-primary" value="<?php echo esc_attr(sprintf(__('Connect %s', 'social-networks-auto-poster-facebook-twitter-g'), $this->ntInfo['name'])); ?>">
+              <?php else: ?>
+                <input type="button" id="svBtn<?php echo esc_attr($nt . $ii); ?>" onclick="nxs_svSetAdv('<?php echo esc_js($nt); ?>','<?php echo esc_js($ii); ?>','dom<?php echo esc_js($ntU . $ii); ?>Div','nxs<?php echo esc_js($ntU); ?>MsgDiv<?php echo esc_js($ii); ?>','r','1');return false;" class="button-primary" value="<?php esc_attr_e('Add Account', 'social-networks-auto-poster-facebook-twitter-g'); ?>"><div id="nxsSaveLoadingImg<?php echo esc_attr($nt . $ii); ?>" class="doneMsg">Saving.....</div><div id="doneMsg<?php echo esc_attr($nt . $ii); ?>" class="doneMsg">Done</div>
+              <?php endif; ?>
+            </div><?php endif; ?>
+          </div>
+        </div>
+        <?php if ($nt === 'ig' || $nt === 'th'): ?>
+        <script>window.nxsMetaDirectDraftValues=function(network,index){var root=document.getElementById('do'+network.toUpperCase()+index+'Div');if(!root)return{};var nickname=root.querySelector('.nxs-add-account-nickname'),settings=root.querySelector('.nxs-add-publishing-settings'),format=settings.querySelector('[name$="[msgFormat]"]'),image=settings.querySelector('[name$="[defImg]"]'),attach=settings.querySelector('[name$="[attchImg]"]:checked');return{account_nickname:nickname&&nickname.value.trim()!==nickname.dataset.suggested?nickname.value.trim():'',message_format:format?format.value:'',default_image:image?image.value:'',attach_image:network==='ig'||!!attach?'1':'0'};};</script>
+        <?php endif; ?>
+        <script>(function(){var root=document.getElementById(<?php echo wp_json_encode($methodId); ?>);if(!root)return;var account=root.closest('.nxs-dual-method-account');root.querySelectorAll('.nxs-add-method-tab').forEach(function(tab){tab.addEventListener('click',function(e){e.preventDefault();var method=tab.dataset.method;root.querySelectorAll('.nxs-add-method-tab').forEach(function(item){var active=item===tab;item.classList.toggle('active',active);item.style.borderBottomColor=active?'#008a20':'transparent';item.style.color=active?'#008a20':'#666';});root.querySelectorAll('.nxs-add-method-panel').forEach(function(panel){panel.hidden=panel.dataset.methodPanel!==method;});var save=account.querySelector('.nxs-direct-save');if(save)save.hidden=method!=='direct';});});}());</script>
+        <?php
     }
     //## Advanced Blocks
     function showProxies($nt, $ii, $o){ if (empty($o['proxy'])) $o['proxy'] = array('proxy'=>'','up'=>''); $o['ii'] = $ii; $o['nt'] = $nt; if (class_exists('nxaddn_prx'))nxaddn_prx::shPrxIntrf($o);}
@@ -218,7 +291,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
       </div><?php                        
     }
     
-    public function saveCommonNTSettings($pval, $o) { if (isset($pval['do'])) $o['do'] = $pval['do']; else $o['do'] = 0;  if (isset($pval['nName'])) $o['nName'] = sanitize_text_field($pval['nName']); if (isset($pval['qTLng'])) $o['qTLng'] = sanitize_text_field($pval['qTLng']);
+    public function saveCommonNTSettings($pval, $o) { if (isset($pval['do'])) $o['do'] = $pval['do']; else $o['do'] = 0;  if (isset($pval['nName'])) $o['nName'] = trim($pval['nName']); if (isset($pval['qTLng'])) $o['qTLng'] = trim($pval['qTLng']);
       if (isset($pval['delayDays'])) $o['nDays'] = trim($pval['delayDays']);  if (isset($pval['delayHrs']))  $o['nHrs'] = trim($pval['delayHrs']); if (isset($pval['delayMin'])) $o['nMin'] = trim($pval['delayMin']); 
       //## Common Items (Possible)
       if (isset($pval['uName']))   $o['uName'] = trim($pval['uName']); else if (isset($o['uName'])) unset($o['uName']);
@@ -321,7 +394,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
                         
     }
     
-    public function showEditNTLine($ii, $pbo, $post) { if(!$this->checkIfFunc()) return;// prr($pbo);
+    public function showEditNTLine($ii, $pbo, $post) { $isPostSocial = class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($pbo); if(!$isPostSocial && !$this->checkIfFunc()) return;// prr($pbo);
       if (!isset($pbo['aName'])) $pbo['aName'] = ''; if (!isset($pbo['do']) && isset($pbo['do'.$this->ntInfo['code']])) $pbo['do'] = $pbo['do'.$this->ntInfo['code']]; $jj = $pbo['jj']; $cbo = $pbo['cbo']; 
       if (empty($pbo['nName'])) $pbo['nName'] = $this->makeUName($pbo, $ii);  $ntU = $this->ntInfo['code']; $nt = $this->ntInfo['lcode'];  $ntName = $this->ntInfo['name'];
       $pMeta = maybe_unserialize(get_post_meta( $post->ID, 'snap'.$this->ntInfo['code'], true)); if (is_array($pMeta) && !empty($pMeta[$ii])) $pbo = $this->adjMetaOpt($pbo, $pMeta[$ii]); $pbo['ii'] = $ii;  ?>
@@ -341,9 +414,9 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
             <input value="1" name="<?php echo $this->ntInfo['lcode']; ?>[<?php echo esc_attr($ii); ?>][do]" type="checkbox" class="nxs_acctcb nxs_acctcb<?php echo $this->ntInfo['lcode']; ?>" <?php if ((int)$pbo['do'] > 0) echo "checked"; ?> />             
           <?php } ?>              
             <?php if (!$this->isMobile) {?>
-            <strong class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(NXS_PLURL.'img/'.(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$this->ntInfo['lcode']).'16.png'); ?>);background-size:14px 14px;font-size: 13px;"><?php /*  _e('Auto-publish to', 'social-networks-auto-poster-facebook-twitter-g'); */ ?> <?php echo esc_html($this->ntInfo['name']); ?> <span style="color: #005800;"><?php if($pbo['nName']!='') echo '('.esc_html($pbo['nName']).')'; ?></span></strong>
+            <strong class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(nxs_network_asset_url(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$this->ntInfo['lcode'])); ?>);background-size:14px 14px;font-size: 13px;"><?php /*  _e('Auto-publish to', 'social-networks-auto-poster-facebook-twitter-g'); */ ?> <?php echo $this->ntInfo['name']; ?> <span style="color: #005800;"><?php if($pbo['nName']!='') echo "(".$pbo['nName'].")"; ?></span></strong>
             <?php } else {?>
-            <strong class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(NXS_PLURL.'img/'.(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$this->ntInfo['lcode']).'16.png'); ?>);font-size: 13px;"><b style="color: #005800;"><?php echo esc_html((!empty($pbo['nName']))?$pbo['nName']:($this->ntInfo['name']." #".$ii)); ?></b></strong>
+            <strong class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(nxs_network_asset_url(!empty($this->ntInfo['imgcode'])?$this->ntInfo['imgcode']:$this->ntInfo['lcode'])); ?>);font-size: 13px;"><b style="color: #005800;"><?php echo (!empty($pbo['nName']))?$pbo['nName']:($this->ntInfo['name']." #".$ii); ?></b></strong>
             <?php }?>                        
             
             
@@ -375,7 +448,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
                <?php } ?>
         
           <?php if ($post->post_status == "publish") { /** POST BUTTON **/ ?>        
-        <a class="nxsPostNowBtn" data-nt="<?php echo esc_attr($ntU); ?>" data-ii="<?php echo esc_attr($ii); ?>" data-ntname="<?php echo esc_attr($ntName); ?>" data-pid="<?php echo esc_attr($post->ID); ?>" style="font-size: 14px; font-weight: bold;" href="#" onclick="return false;">[<?php 
+            <a class="nxsPostNowBtn" data-nt="<?php echo $ntU; ?>" data-ii="<?php echo esc_attr($ii); ?>" data-ntname="<?php echo $ntName; ?>" data-pid="<?php echo $post->ID; ?>" style="font-size: 14px; font-weight: bold;" href="#" onclick="return false;">[<?php 
             _e('Post', 'social-networks-auto-poster-facebook-twitter-g'); if (!$this->isMobile) { echo "&nbsp;"; _e('Now', 'social-networks-auto-poster-facebook-twitter-g');}
           ?>]</a>
         
@@ -390,20 +463,20 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
           <span> 
             <a id="do<?php echo $this->ntInfo['code'].$ii; ?>AG" href="#" style="font-size: 11px;" onclick="doGetHideNTBlock('<?php echo esc_attr($this->ntInfo['code']);?>' , '<?php echo esc_attr($ii); ?>');return false;">[<?php  _e('Options', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;                      
             
-            <a href="#" style="font-weight: bold;font-size: 11px;" onclick="doDelAcct('<?php echo esc_js($this->ntInfo['lcode']); ?>', '<?php echo esc_attr($ii); ?>', '<?php if (isset($pbo['bgBlogID'])) echo esc_js($pbo['nName']); ?>');return false;">[<?php  _e('Post', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;          
+            <a href="#" style="font-weight: bold;font-size: 11px;" onclick="doDelAcct('<?php echo $this->ntInfo['lcode']; ?>', '<?php echo esc_attr($ii); ?>', '<?php if (isset($pbo['bgBlogID'])) echo $pbo['nName']; ?>');return false;">[<?php  _e('Post', 'social-networks-auto-poster-facebook-twitter-g'); ?>]</a>&nbsp;&nbsp;          
           </span>
-       <?php  if (is_array($pMeta) && isset($pMeta[$ii]) && is_array($pMeta[$ii]) && !empty($pMeta[$ii]['pgID'])) { ?> <span style="padding-top: 4px; padding-right: 10px;"><a class="showListOfPostsX" data-jXboxbtid="XpstdDiv<?php echo esc_attr($ntU); ?><?php echo esc_attr($ii); ?>" id="pstd<?php echo esc_attr($ntU); ?><?php echo esc_attr($ii); ?>" style="font-size: 11px;" href="<?php echo esc_url($pMeta[$ii]['postURL']); ?>" target="_blank" rel="noopener noreferrer"><?php
+             <?php  if (is_array($pMeta) && isset($pMeta[$ii]) && is_array($pMeta[$ii]) && !empty($pMeta[$ii]['pgID'])) { ?> <span style="padding-top: 4px; padding-right: 10px;"><a class="showListOfPostsX" data-jXboxbtid="XpstdDiv<?php echo $ntU; ?><?php echo esc_attr($ii); ?>" id="pstd<?php echo $ntU; ?><?php echo esc_attr($ii); ?>" style="font-size: 11px;" href="<?php echo $pMeta[$ii]['postURL'];  ?>" target="_blank"><?php 
              if (!$this->isMobile) {printf( __( 'Posted on', 'nxs_snap' ), $ntName); ?>  <?php echo (isset($pMeta[$ii]['pDate']) && $pMeta[$ii]['pDate']!='')?(nxs_adjTime($pMeta[$ii]['pDate'])):"";} else {  _e('[Post Link]', 'social-networks-auto-poster-facebook-twitter-g'); }?></a></span>
              
               <div style="display: none" id="XpstdDiv<?php echo $ntU; ?><?php echo esc_attr($ii); ?>">        
-       <a id="pstd<?php echo esc_attr($ntU); ?><?php echo esc_attr($ii); ?>" style="font-size: 10px;" href="<?php echo esc_url($pMeta[$ii]['postURL']); ?>" target="_blank" rel="noopener noreferrer"><?php printf(esc_html__( 'Posted on', 'nxs_snap' ), esc_html($ntName)); ?>  <?php echo (isset($pMeta[$ii]['pDate']) && $pMeta[$ii]['pDate']!='')?esc_html(nxs_adjTime($pMeta[$ii]['pDate'])):""; ?></a>
+          <a id="pstd<?php echo $ntU; ?><?php echo esc_attr($ii); ?>" style="font-size: 10px;" href="<?php echo $pMeta[$ii]['postURL'];  ?>" target="_blank"><?php printf( __( 'Posted on', 'nxs_snap' ), $ntName); ?>  <?php echo (isset($pMeta[$ii]['pDate']) && $pMeta[$ii]['pDate']!='')?(nxs_adjTime($pMeta[$ii]['pDate'])):""; ?></a>
         </div>  
              
              <?php } ?>
              </div>
         </div> 
         <?php }  ?>
-      <div id="nxsNTSetDiv<?php echo esc_attr($this->ntInfo['code'].$ii); ?>" class="nxsEdPostMetaBlockBody" style="border: 1px solid #E0E0E0;display:<?php echo $pbo['do']>'0'?'block':'none'; ?>;">
+        <div id="nxsNTSetDiv<?php echo $this->ntInfo['code'].$ii; ?>" class="nxsEdPostMetaBlockBody" style="border: 1px solid #E0E0E0;display:<?php echo $pbo['do']>'0'?'block':'none'; ?>;">        
           <?php if (method_exists($this,'showEdPostNTSettingsV4')) $this->showEdPostNTSettingsV4($pbo, $post); ?>        
         
         
@@ -421,7 +494,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
     public function nxs_tmpltImportComments($post, $ntOpt, $ii){ $pMeta = maybe_unserialize(get_post_meta( $post->ID, 'snap'.$this->ntInfo['code'], true)); 
       if ($post->post_status == "publish") { ?>           
         <?php if (!empty($ntOpt['riComments']) && $ntOpt['riComments']=='1' && is_array($pMeta) && isset($pMeta[$ii]) && is_array($pMeta[$ii]) && !empty($pMeta[$ii]['pgID'])) {  ?>
-      <input style="margin: 6px;" onclick="return false;" type="button" data-ii="<?php echo esc_attr($ii); ?>" data-pid="<?php echo esc_attr($post->ID); ?>" data-nt="<?php echo esc_attr($this->ntInfo['lcode']); ?>" class="button riTo_button" value="<?php esc_attr_e('Import Comments/Replies', 'nxs_snap') ?>" />
+        <input style="margin: 6px;" onclick="return false;" type="button" data-ii="<?php echo esc_attr($ii); ?>" data-pid="<?php echo $post->ID; ?>" data-nt="<?php echo $this->ntInfo['lcode']; ?>" class="button riTo_button" value="<?php _e('Import Comments/Replies', 'nxs_snap') ?>" />
         <?php 
       }} 
     }
@@ -446,7 +519,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
       }
     }
     
-    public function publish($postID, $nto) { $fnName = 'nxs_doPublishTo'.$this->ntInfo['code']; return $fnName($postID, $nto); }
+    public function publish($postID, $nto) { if (class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($nto) && class_exists('NXS_PostSocial_Integration')) return NXS_PostSocial_Integration::publish_snap_account($this->ntInfo['code'], !empty($nto['ii']) ? $nto['ii'] : 0, $postID, $nto); $fnName = 'nxs_doPublishTo'.$this->ntInfo['code']; return $fnName($postID, $nto); }
     
     function adjPreFormatWP(&$options, $postID){}
     function adjAfterPost(&$options, &$ret){}
@@ -461,13 +534,13 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
         $pHistory =  maybe_unserialize(get_post_meta($postID, '_snapPHST', true)); if (empty($pHistory)) $pHistory = array(); $pHistory[strtolower($nt)][$ii][] = array('l'=> $args['postURL'], 'id'=>$args['pgID'], 'd'=>$args['pDate'], 'w'=>$w);
         delete_post_meta($postID, '_snapPHST'); add_post_meta($postID, '_snapPHST', $pHistory); 
       } if (is_array($args) && isset($args['pDate'])) $mpo[$ii]['pDate'] = $args['pDate'];  
-      /*$mpo = mysql_real_escape_string(serialize($mpo)); */ delete_post_meta($postID, 'snap'.$nt); add_post_meta($postID, 'snap'.$nt, str_replace('\\','\\\\', serialize(nxs_protect_settings($mpo))));
+      /*$mpo = mysql_real_escape_string(serialize($mpo)); */ delete_post_meta($postID, 'snap'.$nt); add_post_meta($postID, 'snap'.$nt, str_replace('\\','\\\\', serialize($mpo)));
     }
     
-    function publishWP($ii, $postID=0){ $options = $this->nt[$ii]; $extInfo =''; $addParams = nxs_makeURLParams(array('NTNAME'=>$this->ntInfo['name'], 'NTCODE'=>$this->ntInfo['code'], 'POSTID'=>$postID, 'ACCNAME'=>$options['nName']));  
+    function publishWP($ii, $postID=0){ $options = $this->nt[$ii]; $options['ii'] = $ii; if (class_exists('NXS_PostSocial_Accounts') && NXS_PostSocial_Accounts::is_account($options) && class_exists('NXS_PostSocial_Integration')) return NXS_PostSocial_Integration::publish_snap_account($this->ntInfo['code'], $ii, $postID, $options); $extInfo =''; $addParams = nxs_makeURLParams(array('NTNAME'=>$this->ntInfo['name'], 'NTCODE'=>$this->ntInfo['code'], 'POSTID'=>$postID, 'ACCNAME'=>$options['nName']));
       $blogTitle = htmlspecialchars_decode(get_bloginfo('name'), ENT_QUOTES); if ($blogTitle=='') $blogTitle = home_url(); 
       if (!isset($options['imgToUse'])) $options['imgToUse'] = ''; if (!isset($options['imgSize'])) $options['imgSize'] = ''; if (empty($options['imgSize'])&&!empty($options['wpImgSize'])) $options['imgSize'] = $options['wpImgSize'];
-      $logNT = '<span style="color:#FA5069">'.esc_html($this->ntInfo['name']).'</span> - '.esc_html($options['nName']); $snap_ap = get_post_meta($postID, 'snap'.$this->ntInfo['code'], true); $snap_ap = maybe_unserialize($snap_ap);
+      $logNT = '<span style="color:#FA5069">'.$this->ntInfo['name'].'</span> - '.$options['nName']; $snap_ap = get_post_meta($postID, 'snap'.$this->ntInfo['code'], true); $snap_ap = maybe_unserialize($snap_ap);
       if (!isset($options['pType'])) $options['pType'] = 'im'; if ($options['pType']=='sh') sleep(rand(1, 10)); //## Sho eto?
       if ($options['pType']!='aj' && is_array($snap_ap) && (nxs_chArrVar($snap_ap[$ii], 'isPosted', '1') || nxs_chArrVar($snap_ap[$ii], 'isPrePosted', '1'))) { //## Check this!!!!
         $snap_isAutoPosted = get_post_meta($postID, 'snap_isAutoPosted', true); if ($snap_isAutoPosted!='2') {  
@@ -476,7 +549,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
       } 
       $isNoImg = false; $tagsA = array(); $tags = '';  $catsA = array(); $cats = ''; global $nxs_urlLen;//## Fix this with defaults
       if ($postID=='0') { echo "Testing ... <br/><br/>"; $urlToGo = home_url(); $options['msgFormat'] = 'Test Post from '.$blogTitle."\r\n".$urlToGo; $options['msgTFormat'] = 'Test Post from '.$blogTitle;
-        if (!empty($options['defImg'])) $imgURL = $options['defImg']; else $imgURL = "https://direct.gtln.us/img/nxs/df/dfImg".rand(1, 15).".jpg";
+        if (!empty($options['defImg'])) $imgURL = $options['defImg']; else $imgURL = "https://go2ln.com/img/nxs/df/dfImg".rand(1, 15).".jpg";
        } else { $post = get_post($postID); if(empty($post)) {nxs_LogIt('E', 'Error', $logNT, '','No Post');} if (!isset($options['defImg'])) $options['defImg'] = '';  $nxs_urlLen = 0;
         $this->adjPreFormatWP($options, $postID);  $options = nxs_getURL($options, $postID, $addParams); 
         if (!empty($options['msgFormat']))$options['msgFormat'] = nsFormatMessage( $options['msgFormat'], $postID, $addParams, '', $options); if (!empty($options['msgTFormat'])) $options['msgTFormat'] = nsFormatMessage( $options['msgTFormat'], $postID, $addParams, '', $options);
@@ -486,12 +559,17 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
         if (!empty($options['inclTags']) && $options['inclTags']=='1'){$t = wp_get_post_tags($postID); foreach ($t as $tagA) {$tagsA[] = $tagA->name;} $tags = implode(',',$tagsA); }
         if (!empty($options['inclCats']) && $options['inclCats']=='1'){$postCats = wp_get_post_categories($postID); $cats = array();  foreach($postCats as $c){ $cat = get_category($c); $catsA[] = str_ireplace('&','&amp;',$cat->name); $cats = implode(',',$catsA); }} 
         
-        if (!empty($options['attchAsVid']) && $options['attchAsVid']=='A') { $vids = nsFindVidsInPost($post); if (count($vids)>0) {        
-          if (strlen($vids[0])==11) { $vidURL = 'http://www.youtube.com/watch?v='.$vids[0]; $imgVURL = 'http://img.youtube.com/vi/'.$vids[0].'/maxresdefault.jpg'; } 
-          if (strlen($vids[0])==8) { $vidURL = 'https://secure.vimeo.com/moogaloop.swf?clip_id='.$vids[0].'&autoplay=1';
-            //$mssg['source'] = 'http://player.vimeo.com/video/'.$vids[0]; 
-            $apiURL = "http://vimeo.com/api/v2/video/".$vids[0].".json?callback=showThumb"; $json = nxs_remote_get($apiURL);
-            if (!is_nxs_error($json)) { $json = $json['body']; $json = str_replace('showThumb(','',$json); $json = str_replace('])',']',$json);  $json = json_decode($json, true); $imgVURL = $json[0]['thumbnail_large']; }           
+        if (!empty($options['attchAsVid']) && $options['attchAsVid']=='A') { $vids = nsFindVidsInPost($post); $vimeoID = '';
+          if (preg_match('~https?://(?:www\.|player\.)?vimeo\.com/(?:video/)?([0-9]{6,12})~i', $post->post_content, $vimeoMatch)) $vimeoID = $vimeoMatch[1];
+          if (count($vids)===0 && $vimeoID!=='') $vids[] = $vimeoID;
+          if (count($vids)>0) {
+          if (strlen($vids[0])==11 && $vids[0]!==$vimeoID) { $vidURL = 'https://www.youtube.com/watch?v='.$vids[0]; $imgVURL = 'https://img.youtube.com/vi/'.$vids[0].'/maxresdefault.jpg'; }
+          if (ctype_digit((string)$vids[0]) && strlen((string)$vids[0])!=11) { $vidURL = 'https://vimeo.com/'.$vids[0];
+            $apiURL = 'https://vimeo.com/api/oembed.json?url='.rawurlencode($vidURL); $response = nxs_remote_get($apiURL);
+            if (!is_nxs_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+              $oembed = json_decode(wp_remote_retrieve_body($response), true);
+              if (!empty($oembed['thumbnail_url']) && wp_http_validate_url($oembed['thumbnail_url'])) $imgVURL = $oembed['thumbnail_url'];
+            }
           }
          } if (trim($imgVURL)!='') $imgURL = $imgVURL; 
         } $extInfo = ' | PostID: '.$postID." - ".(is_object($post))?$post->post_title:'';               
@@ -503,7 +581,7 @@ if (!class_exists('nxs_snapClassNT')) { class nxs_snapClassNT {
       $clName = 'nxs_class_SNAP_'.$this->ntInfo['code']; $ntToPost = new $clName(); $ret = $ntToPost->doPostToNT($options, $message);        
       //## Process Results
       if (!is_array($ret) || empty($ret['isPosted']) || $ret['isPosted']!='1') { //## Error 
-         if ($postID=='0') echo esc_html__('The network rejected the test post. See the SNAP log for details.', 'social-networks-auto-poster-facebook-twitter-g'); nxs_LogIt('E', 'Error', $logNT, $this->ntInfo['code'], '-=ERROR=- '.print_r($ret, true), $extInfo); 
+         if ($postID=='0') prr($ret); nxs_LogIt('E', 'Error', $logNT, $this->ntInfo['code'], '-=ERROR=- '.print_r($ret, true), $extInfo); 
       } else {  // ## All Good - log it.
         if (!empty($ret['msg'])) nxs_LogIt('I', 'Message', $logNT, $this->ntInfo['code'], print_r($ret['msg'], true), $extInfo); 
         if (!empty($_POST['nxsact'])&&($_POST['nxsact']=='manPost' || $_POST['nxsact']=='testPost')) 

@@ -11,8 +11,8 @@ if (!class_exists("nxs_snapClassMD")) { class nxs_snapClassMD extends nxs_snapCl
   //#### Show Unit  Settings  
   function checkIfSetupFinished($options) { return !empty($options['accessToken']); }
   function doAuth() {  $ntInfo = $this->ntInfo; global $nxs_snapSetPgURL;
-    if (isset($_GET['acc']) || (isset($_GET['state']) && isset($_GET['code']) && strpos(wp_unslash($_GET['state']), 'nxs-md-') === 0)) { $acc = isset($_GET['acc']) ? absint($_GET['acc']) : 0; $options = ($acc && isset($this->nt[$acc])) ? $this->nt[$acc] : array();
-        if (isset($_GET['auth']) && $_GET['auth']==$ntInfo['lcode']){ if (!nxs_snap_user_can_access() || !isset($this->nt[$acc])) return;
+    if (isset($_GET['acc']) || (isset($_GET['state']) && isset($_GET['code']) && strpos(wp_unslash($_GET['state']), 'nxs-md-') === 0)) { $has_acc = isset($_GET['acc']); $acc = $has_acc ? absint($_GET['acc']) : 0; $options = ($has_acc && isset($this->nt[$acc])) ? $this->nt[$acc] : array();
+        if (isset($_GET['auth']) && $_GET['auth']==$ntInfo['lcode']){ if (!nxs_snap_user_can_access() || !$has_acc || !isset($this->nt[$acc])) return;
           //if(stripos($nxs_snapSetPgURL, 'page=NextScripts_SNAP.php')===false) { $newURL = explode('?', $nxs_snapSetPgURL); $nxs_snapSetPgURL = $newURL[0]; }
           $url = 'https://medium.com/m/oauth/authorize?'.http_build_query(array('client_id'=>nxs_gak($options['appKey']),'scope'=>'basicProfile,publishPost,listPublications','state'=>nxs_oauth_state_create('md', $acc),'response_type'=>'code','redirect_uri'=>$nxs_snapSetPgURL), '', '&');
           echo '<br/><br/>All good?! Redirecting ..... <script type="text/javascript">window.location = "'.esc_url($url).'"</script>';
@@ -31,10 +31,10 @@ if (!class_exists("nxs_snapClassMD")) { class nxs_snapClassMD extends nxs_snapCl
           $bd = json_decode($rep['body'], true); if (!is_array($bd) || !is_array($bd['data'])) die(esc_html__('Invalid Medium account response.', 'social-networks-auto-poster-facebook-twitter-g')); $bd = $bd['data'];
           $options['appAppUserID'] = $bd['id']; $options['appAppUserName'] = $bd['name'].' ('.$bd['username'].')';  $options['appAppUserURL'] = $bd['url'];
 
-          $rep = nxs_remote_get('https://api.medium.com/v1/users/'.$options['appAppUserID'].'/publications', $advSet);
-          $bd = json_decode($rep['body'], true); if (!is_array($bd) || !is_array($bd['data'])) die(esc_html__('Invalid Medium publications response.', 'social-networks-auto-poster-facebook-twitter-g')); $bd = $bd['data']; $pubList = array();
+          $rep = nxs_remote_get('https://api.medium.com/v1/users/'.$options['appAppUserID'].'/publications', $advSet);  prr($advSet); prr($rep);
+          $bd = json_decode($rep['body'], true); if (!is_array($bd) || !is_array($bd['data'])) die('ERROR'); else prr($bd); $bd = $bd['data'];   $pubList = array();
           foreach ($bd as $d) { $repX = nxs_remote_get('https://api.medium.com/v1/publications/'.$d['id'].'/contributors', $advSet);
-            $bdX = json_decode($repX['body'], true); if (!is_array($bdX) || !is_array($bdX['data'])) die(esc_html__('Invalid Medium contributors response.', 'social-networks-auto-poster-facebook-twitter-g')); $bdX = $bdX['data'];
+            $bdX = json_decode($repX['body'], true); if (!is_array($bdX) || !is_array($bdX['data'])) die('ERROR'); else prr($bdX); $bdX = $bdX['data'];
             foreach ($bdX as $dX) { if ($dX['userId']==$options['appAppUserID']) { $pubList[] = array('id'=>$d['id'], 'name'=>$d['name']); break; }}
           } $options['pubList'] = $pubList;
 
@@ -64,7 +64,7 @@ if (!class_exists("nxs_snapClassMD")) { class nxs_snapClassMD extends nxs_snapCl
       </div>
 
     <br/><br/><div><b style="font-size: 15px;"><?php _e('Where to post:', 'social-networks-auto-poster-facebook-twitter-g'); ?></b><select name="md[<?php echo esc_attr($ii); ?>][publ]"><option <?php if (empty($options['publ'])) echo 'selected="selected"'; ?>  value="0">Profile</option>
-      <?php if (!empty($options['pubList'])) { ?> <?php foreach ($options['pubList'] as $pb) {?> <option <?php if ((string)$pb['id']==(string)$options['publ']) echo 'selected="selected"'; ?> value="<?php echo esc_attr($pb['id']); ?>">[Publication]&nbsp;<?php echo esc_html($pb['name']); ?></option> <?php }} ?></select>
+      <?php if (!empty($options['pubList'])) { ?> <?php foreach ($options['pubList'] as $pb) {?> <option <?php if ((string)$pb['id']==(string)$options['publ']) echo 'selected="selected"'; ?> value="<?php echo $pb['id']; ?>">[Publication]&nbsp;<?php echo $pb['name']; ?></option> <?php }} ?></select>
     </div>
     <br/><?php $this->elemTitleFormat($ii,'Title Format','msgTFormat',$options['msgTFormat']); ?> <br/><?php $this->elemMsgFormat($ii,'Message Text Format','msgFormat',$options['msgFormat']); ?>
     <div style="margin-bottom: 20px;margin-top: 5px;"><input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][inclTags]"  <?php if ((int)$options['inclTags'] == 1) echo "checked"; ?> /> 
@@ -90,12 +90,12 @@ if (!class_exists("nxs_snapClassMD")) { class nxs_snapClassMD extends nxs_snapCl
            //## Getting user ID && List of Publications
            $argArr = ['ref'=>'https://medium.com',  'aj'=>true, 'extraHeaders'=>['Accept'=> 'application/json, text/javascript, */*; q=0.01','Content-Type'=>'application/json; charset=UTF-8', 'Authorization'=>'Bearer '.$options[$ii]['accessToken']]];
            $args = nxs_mkRmReqArgs($argArr); //prr($args, 'ARRRRGGGGGGGSSSSSSS');
-           $rq = new nxsHttp; $ret = $rq->request('https://api.medium.com/v1/me', $args); if (is_nxs_error($ret)) return esc_html($ret->get_error_message());
+           $rq = new WP_Http; $ret = $rq->request('https://api.medium.com/v1/me', $args); /* prr($ret, 'CALL RET'); */ if (is_nxs_error($ret)) return print_r($ret, true);
            if (!empty($ret['body'])) { $ui = json_decode($ret['body'], true); $options[$ii]['appAppUserID'] = $ui['data']['id'];
                if (!empty($options[$ii]['appAppUserID'])) $ret = $rq->request('https://api.medium.com/v1/users/'.$options[$ii]['appAppUserID'].'/publications', $args);
                if (!empty($ret['body'])) { $bd = json_decode($ret['body'], true);  $bd = $bd['data'];   $pubList = array();
                    foreach ($bd as $d) { $repX = $rq->request('https://api.medium.com/v1/publications/'.$d['id'].'/contributors', $args);
-                        $bdX = json_decode($repX['body'], true); if (!is_array($bdX) || !is_array($bdX['data'])) die(esc_html__('Invalid Medium contributors response.', 'social-networks-auto-poster-facebook-twitter-g')); $bdX = $bdX['data'];
+                       $bdX = json_decode($repX['body'], true); if (!is_array($bdX) || !is_array($bdX['data'])) die('ERROR'); else prr($bdX); $bdX = $bdX['data'];
                        foreach ($bdX as $dX) { if ($dX['userId']==$options[$ii]['appAppUserID']) { $pubList[] = array('id'=>$d['id'], 'name'=>$d['name']); break; }}
                    } $options[$ii]['pubList'] = $pubList;
                }

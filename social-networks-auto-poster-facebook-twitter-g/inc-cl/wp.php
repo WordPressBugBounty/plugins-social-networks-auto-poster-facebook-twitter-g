@@ -22,19 +22,18 @@ if (!class_exists("nxs_snapClassWP")) { class nxs_snapClassWP extends nxs_snapCl
     function checkIfSetupFinished($options) { return !empty($options['uPass']); }
     function accTab($ii, $options, $isNew=false){ $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; if (!isset($options['inclTags'])) $options['inclTags'] = 1; if (!isset($options['inclCats'])) $options['inclCats'] = 1;
         if (empty($options['pt'])) $options['pt'] = 'post';
-        ?><div style="width:100%;"><strong><?php _e('Where to Post', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong>&nbsp;<i><?php _e('XMLRPC URL', 'social-networks-auto-poster-facebook-twitter-g'); ?></i></div><input style="width: 550px;" name="wp[<?php echo esc_attr($ii); ?>][wpURL]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['wpURL'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /><br/>
-        <div style="font-size: 11px; margin: 0px;">[Any Wordpress Based Blog] Usually its a URL of your Wordpress installation with /xmlrpc.php at the end.<br/> [Wordpress.com] Please use <b style="color: #005800;">https://YourUserName.wordpress.com/xmlrpc.php</b> (replace YourUserName with your user name) <br/>[Blog.com] Please use <b style="color: #005800;">http://YourUserName.blog.com/xmlrpc.php</b> (replace YourUserName with your user name)</div><br/>
+        ?><div style="width:100%;"><strong><?php _e('WordPress Site URL', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong>&nbsp;<i><?php _e('e.g. https://mywebsite.com', 'social-networks-auto-poster-facebook-twitter-g'); ?></i></div><input class="nxAccEdElem" name="wp[<?php echo esc_attr($ii); ?>][wpURL]" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['wpURL'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />
+        <div style="font-size: 11px; margin: 0px; margin-bottom: 15px;">Usually the main URL of the other WordPress site. The plugin will automatically discover the XML-RPC path. If you have a custom installation or discovery fails, please enter the full path to xmlrpc.php (e.g. <b style="color: #005800;">https://mywebsite.com/wp/xmlrpc.php</b>).</div>
 
-        <?php $this->elemUserPass($ii, $options['uName'], $options['uPass']); ?><br/>
+        <?php $this->elemUserPass($ii, $options['uName'], $options['uPass']); ?>
 
-        <input type="checkbox" name="wp[<?php echo esc_attr($ii); ?>][exactCopy]" <?php if (!empty($options['exactCopy'])) echo "checked"; ?> onchange="if (jQuery(this).is(':checked')) {jQuery('#moreOptions<?php echo esc_attr($nt.$ii); ?>').hide(); jQuery('#moreOptionsExC<?php echo esc_attr($nt.$ii); ?>').show();}else{jQuery('#moreOptions<?php echo esc_attr($nt.$ii); ?>').show();jQuery('#moreOptionsExC<?php echo esc_attr($nt.$ii); ?>').hide();}" /> Make exact copy.<br/> <br/>
+        <div style="margin-top: 10px; margin-bottom: 10px;"><input type="checkbox" name="wp[<?php echo esc_attr($ii); ?>][exactCopy]" <?php if (!empty($options['exactCopy'])) echo "checked"; ?> onchange="if (jQuery(this).is(':checked')) {jQuery('#moreOptions<?php echo esc_attr($nt.$ii); ?>').hide(); jQuery('#moreOptionsExC<?php echo esc_attr($nt.$ii); ?>').show();}else{jQuery('#moreOptions<?php echo esc_attr($nt.$ii); ?>').show();jQuery('#moreOptionsExC<?php echo esc_attr($nt.$ii); ?>').hide();}" /> Make exact copy.</div>
 
         <div id="moreOptions<?php echo esc_attr($nt.$ii); ?>" style="<?php if (!empty($options['exactCopy'])) echo "display:none;"; ?>">
 
-            <?php $this->elemTitleFormat($ii,'Post Title Format','msgTFormat',$options['msgTFormat']); $this->elemMsgFormat($ii,'Post Text Format','msgFormat',$options['msgFormat']);?><br/ >
+            <?php $this->elemTitleFormat($ii,'Post Title Format','msgTFormat',$options['msgTFormat']); $this->elemMsgFormat($ii,'Post Text Format','msgFormat',$options['msgFormat']);?>
 
-            <div style="width:100%;"><strong><?php _e('Post Type', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong>&nbsp;</div><input style="width: 550px;" name="wp[<?php echo esc_attr($ii); ?>][pt]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['pt'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /><br/>
-            <br/>
+            <div style="width:100%;"><strong><?php _e('Post Type', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong>&nbsp;</div><input class="nxAccEdElem" name="wp[<?php echo esc_attr($ii); ?>][pt]" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['pt'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />
 
             <div style="margin-bottom: 20px;margin-top: 5px;"><input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][inclTags]"  <?php if (!empty($options['inclTags'])) echo "checked"; ?> />
                 <strong><?php _e('Post with tags', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php _e('Tags from the blogpost will be included', 'social-networks-auto-poster-facebook-twitter-g'); ?>
@@ -45,7 +44,7 @@ if (!class_exists("nxs_snapClassWP")) { class nxs_snapClassWP extends nxs_snapCl
         </div>
 
         <div id="moreOptionsExC<?php echo esc_attr($nt.$ii); ?>" style="<?php if (empty($options['exactCopy'])) echo "display:none;"; ?>">
-            &nbsp;&nbsp;&nbsp;<input type="checkbox" name="wp[<?php echo esc_attr($ii); ?>][keepDate]" <?php if (!empty($options['keepDate'])) echo "checked"; ?>/> Keep Original Date<br/><br/>
+            <div style="margin-top: 10px; margin-bottom: 10px; padding-left: 15px;"><input type="checkbox" name="wp[<?php echo esc_attr($ii); ?>][keepDate]" <?php if (!empty($options['keepDate'])) echo "checked"; ?>/> Keep Original Date</div>
         </div>
         <?php
     }
@@ -54,7 +53,7 @@ if (!class_exists("nxs_snapClassWP")) { class nxs_snapClassWP extends nxs_snapCl
     function setNTSettings($post, $options){
         foreach ($post as $ii => $pval){
             if (!empty($pval['uPass']) && !empty($pval['uPass'])){ if (!isset($options[$ii])) $options[$ii] = array(); $options[$ii] = $this->saveCommonNTSettings($pval,$options[$ii]);
-                if (isset($pval['wpURL']))  $options[$ii]['wpURL'] = esc_url_raw(trim($pval['wpURL']), array('https')); if ($options[$ii]['wpURL'] && stripos($options[$ii]['wpURL'], 'https://')!==0) $options[$ii]['wpURL'] = ''; // prr($options[$ii]['wpURL']);
+                if (isset($pval['wpURL']))  $options[$ii]['wpURL'] = trim($pval['wpURL']); if (substr($options[$ii]['wpURL'], 0, 4)!=='http') $options[$ii]['wpURL'] = 'http://'.$options[$ii]['wpURL']; // prr($options[$ii]['wpURL']);
                 if (isset($pval['pt']))  $options[$ii]['pt'] = trim($pval['pt']);
                 if (isset($pval['exactCopy']))  $options[$ii]['exactCopy'] = true; else $options[$ii]['exactCopy'] = false;
                 if (!empty($pval['keepDate']))  $options[$ii]['keepDate'] = true; else $options[$ii]['keepDate'] = false;

@@ -34,6 +34,10 @@
 }.NXSButtonB:active {color:#ffffff; position:relative; top:1px;}.NXSButton:focus {color:#ffffff; position:relative; top:1px;} 
 #nxs_ntType {width: 150px;}
 .nxsInfoMsg{  margin: 1px auto; padding: 3px 10px 3px 5px; border: 1px solid #ffea90;  background-color: #fdfae4; display: inline; -webkit-border-radius: 5px; -moz-border-radius: 5px; border-radius: 5px; }
+.nxsAccountsToolbar { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.nxsAccountsToolbar #nxs_snapNewAcc { flex: none; }
+.nxsAccountsToolbar .nxsAccountsHint { display: block; flex: 1 1 auto; min-width: 0; margin: 1px 0; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.nxsAccountsSelectLinks { padding: 2px 0 8px; text-align: right; }
 .blnkg{text-decoration:blink; font-size: 17px; color: #0CB107; font-weight: bold; display: inline;}
 
 div.popShAtt { display: none; position: absolute; width: 600px; padding: 10px; background: #eeeeee; color: #000000; border: 1px solid #1a1a1a; font-size: 90%; }
@@ -46,7 +50,7 @@ ul.nsx_tabs {margin: 0;padding: 0; margin-top:5px;float: left;list-style: none;h
 ul.nsx_tabs li {float: left;margin: 0;padding: 0;height: 31px;line-height: 31px;border: 1px solid #999;border-left: none;margin-bottom: -1px;overflow: hidden;position: relative;background: #e0e0e0;}
 ul.nsx_tabs li a {text-decoration: none;color: #000; display: block; font-size: 1.2em; padding: 0 20px; border: 1px solid #fff; outline: none;}
 ul.nsx_tabs li a:hover { background: #ccc;}
-html ul.nsx_tabs li.active, html ul.nsx_tabs li.active a:hover  { background: #fff; border-bottom: 1px solid #fff; }
+html ul.nsx_tabs li.active, html ul.nsx_tabs li.active a:hover  { background: #fff; border-bottom: 1px solid #fff; height: 32px; z-index: 2; }
 .nsx_tab_container {border: 1px solid #999; border-top: none; overflow: hidden; clear: both; float: left; width: 99%; background: #fff;}
 .nsx_tab_content {padding: 10px;}
 
@@ -483,3 +487,234 @@ pre { white-space: pre-wrap; white-space: -moz-pre-wrap; white-space: -pre-wrap;
 .inside h4 {font-size: 1em;}
 .inside b, .inside strong {font-weight: 600;}
 .nxsOfrLnk {color: #198754; text-decoration: underline; font-weight: bold;}
+
+/* ==========================================================================
+   Formatting, Spacing and Button overrides to fix visual issues
+   ========================================================================== */
+
+/* 1. Set consistent heights and paddings for all text-like inputs and textareas */
+.nxs_box_inside input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=image]):not([type=hidden]),
+.nxs_box_inside textarea, 
+.nxAccEdElem {
+    padding: 6px 10px !important;
+    height: 32px !important;
+    border: 1px solid #ACACAC !important;
+    box-sizing: border-box !important;
+    border-radius: 4px !important;
+    font-size: 13px !important;
+    margin-top: 4px !important;
+    margin-bottom: 8px !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+    width: 92% !important;
+    max-width: 510px !important;
+}
+
+.nxAccEdElem {
+    width: 92% !important;
+    max-width: 510px !important;
+}
+
+/* Textareas should retain their natural auto height */
+.nxs_box_inside textarea,
+textarea.nxAccEdElem {
+    height: auto !important;
+}
+
+/* 2. Format blue buttons to match green NXSButton font, layout, and shadow style */
+#nxsDivWrap .button-primary, 
+#nxsDivWrap .NXSButtonB {
+    background-color: #038bc4 !important;
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0.05, #038bc4), color-stop(1, #096aa8)) !important;
+    background: -webkit-linear-gradient(top, #038bc4 5%, #096aa8 100%) !important;
+    background: -moz-linear-gradient(top, #038bc4 5%, #096aa8 100%) !important;
+    background: linear-gradient(to bottom, #038bc4 5%, #096aa8 100%) !important;
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#038bc4', endColorstr='#096aa8') !important;
+    -moz-border-radius: 4px !important;
+    -webkit-border-radius: 4px !important;
+    border-radius: 4px !important;
+    border: 1px solid #077cb8 !important;
+    display: inline-block !important;
+    color: #ffffff !important;
+    font-family: 'Trebuchet MS', sans-serif !important;
+    font-size: 12px !important;
+    font-weight: bold !important;
+    padding: 5px 14px !important;
+    text-decoration: none !important;
+    text-shadow: 1px 1px 0px #095d80 !important;
+    height: auto !important;
+    line-height: normal !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+}
+
+#nxsDivWrap .button-primary:hover, 
+#nxsDivWrap .NXSButtonB:hover {
+    color: #ffffff !important;
+    background-color: #096aa8 !important;
+    background: -webkit-gradient(linear, left top, left bottom, color-stop(0.05, #096aa8), color-stop(1, #038bc4)) !important;
+    background: -webkit-linear-gradient(top, #096aa8 5%, #038bc4 100%) !important;
+    background: -moz-linear-gradient(top, #096aa8 5%, #038bc4 100%) !important;
+    background: linear-gradient(to bottom, #096aa8 5%, #038bc4 100%) !important;
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#096aa8', endColorstr='#038bc4') !important;
+}
+
+/* 3. Spacing adjustments for checkboxes and labels */
+.nxs_box_inside input[type=checkbox] {
+    vertical-align: middle !important;
+    margin-top: -3px !important;
+    margin-right: 6px !important;
+}
+
+.nxs_box_inside label {
+    vertical-align: middle !important;
+    font-size: 13px !important;
+}
+
+.nxs_box_inside input + br,
+.nxs_box_inside textarea + br,
+.nxs_box_inside .nxAccEdElem + br,
+.nxs_box_inside br + br {
+    display: none !important;
+}
+
+.nxs-filter-settings input + br,
+.nxs-shortener-settings input + br {
+    display: block !important;
+}
+.nxs-shortener-settings input:not([type=checkbox]):not([type=radio]):not([type=hidden]) {
+    width: min(100%, 360px) !important;
+    max-width: 360px !important;
+}
+
+/* Filter widgets manage their own compact search field and responsive width. */
+#nxs-filter-settings .Tokenize {
+    min-width: 0;
+    width: min(100%, 520px);
+    max-width: 100%;
+}
+#nxs-filter-settings .Tokenize ul.TokensContainer li.TokenSearch input {
+    width: auto !important;
+    max-width: none !important;
+    height: 20px !important;
+    padding: 1px 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+#nxs-autopost-method input[name="quDays"],
+#nxs-autopost-method input[name="quHrs"],
+#nxs-autopost-method input[name="quMins"],
+#nxs-autopost-method input[name="quLimitRndMins"] {
+    width: 58px !important;
+    max-width: 58px !important;
+    margin: 0 5px !important;
+    text-align: center;
+}
+.nxs-filter-settings #nxs_flrts .nxsLftPad > div {
+    margin: 0 0 14px;
+}
+
+.nxs-shortener-field {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin: 8px 0 8px 30px;
+}
+.nxs-shortener-field > label {
+    flex: 0 0 120px;
+}
+.nxs-shortener-field > input {
+    width: min(100%, 360px) !important;
+    max-width: 360px !important;
+    margin: 0 !important;
+}
+.nxs-shortener-field > select {
+    min-width: 90px;
+}
+.nxs-shortener-field > small {
+    color: #646970;
+}
+
+.nxs-system-settings .nxs-system-field {
+    margin: 16px 0 0 10px;
+}
+.nxs-system-settings .nxs-system-field > label,
+.nxs-system-settings .nxs-system-field > small {
+    display: block;
+}
+.nxs-system-settings .nxs-system-field > input {
+    width: 90px !important;
+    max-width: 90px !important;
+    margin: 5px 0 !important;
+}
+.nxs-system-settings .nxs-system-field > small,
+.nxs-system-settings .nxs-system-check > small,
+.nxs-system-settings .nxs-system-email > small {
+    color: #646970;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.nxs-system-settings .nxs-system-check {
+    margin-top: 16px;
+}
+.nxs-system-settings .nxs-system-check > label,
+.nxs-system-settings .nxs-system-check > small {
+    display: block;
+}
+.nxs-system-settings .nxs-system-email {
+    margin: 12px 0 0 28px;
+}
+.nxs-system-settings .nxs-system-email > label,
+.nxs-system-settings .nxs-system-email > small {
+    display: block;
+}
+.nxs-system-settings .nxs-system-email > input {
+    width: min(100%, 360px) !important;
+    max-width: 360px !important;
+}
+
+/* Keep each role and its explanation together in the Settings permissions panel. */
+.nxs-user-privileges .nxs-skip-security,
+.nxs-user-privileges .nxs-role-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.4;
+}
+.nxs-user-privileges .nxs-role-group {
+    margin: 18px 0 0;
+    padding: 0;
+    border: 0;
+}
+.nxs-user-privileges .nxs-role-group legend {
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 14px;
+}
+.nxs-user-privileges .nxs-role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px 18px;
+}
+.nxs-user-privileges .nxs-role-choice input[type=checkbox],
+.nxs-user-privileges .nxs-skip-security input[type=checkbox] {
+    flex: none;
+    margin: 2px 0 0 !important;
+}
+.nxs-user-privileges .nxs-role-choice small,
+.nxs-user-privileges .nxs-skip-security small {
+    display: block;
+    margin-top: 2px;
+    color: #646970;
+    font-size: 12px;
+}
+.nxs-user-privileges .nxs-zero-user {
+    margin-top: 12px;
+}
+
+/* Keep the tall Add New Network dialog close to the top of the viewport. */
+#pgwModal:has(#nxs_spPopupU) .pm-body {
+    margin-top: 18px !important;
+}

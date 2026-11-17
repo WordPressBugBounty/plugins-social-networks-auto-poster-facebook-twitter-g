@@ -11,48 +11,20 @@ if (!class_exists("nxs_class_SNAP_FB")) { class nxs_class_SNAP_FB {
         foreach ($options as $ii=>$ntOpts) $out[$ii] = $this->doPostToNT($ntOpts, $message);
         return $out;
     }
-    function doPostToNT($options, $message){ $badOut = array('Warning'=>'', 'Error'=>''); $wprg = array('sslverify'=>true, 'timeout' => 30);
+    function doPostToNT($options, $message){ $badOut = array('Warning'=>'', 'Error'=>''); $wprg = array('sslverify'=>true, 'reject_unsafe_urls'=>true, 'timeout' => 30);
         //## Check settings
         if (!is_array($options)) { $badOut['Error'] = 'No Options'; return $badOut; }
-        if (empty($options['accessToken']) && empty($options['pageAccessToken']) && empty($options['tpt']) && empty($options['uPass'])) { $badOut['Error'] = 'No Auth Token Found/Not configured'; return $badOut; }
+        if (empty($options['appKey']) || empty($options['appSec']) || (empty($options['accessToken']) && empty($options['pageAccessToken']))) { $badOut['Error'] = 'No Auth Token Found/Not configured'; return $badOut; }
 
         if (!empty($message['pText'])) $msg = $message['pText']; else $msg = nxs_doFormatMsg($options['msgFormat'], $message);
         $msg = strip_tags($msg); $msg = str_ireplace('&lt;(")','<(")', $msg); //## FB Smiles FIX 3
         if (substr($msg, 0, 1)=='@') $msg = ' '.$msg; // ERROR] couldn't open file fix
-        $options['tpt'] = ''; $options['uMsg'] = '';
-        if (empty($options['tpt']) && !empty($options['uPass'])) { //echo "<br/>.........NO TPT PASS.......";
-            if (!class_exists('nxsAPI_FB')) { $badOut['Error'] = 'Premium API Library not found'; return $badOut; }
-            $email = $options['uName'];  $pass = (substr($options['uPass'], 0, 5)=='n5g9a' || substr($options['uPass'], 0, 5)=='g9c1a')?nsx_doDecode(substr($options['uPass'], 5)):$options['uPass'];
-            $opVal = array(); $opNm = 'nxs_snap_fb_'.sha1('nxs_snap_fb'.$email.$pass); $opVal = nxs_getOption($opNm); if (!empty($opVal) & is_array($opVal)) $options = array_merge($options, $opVal);
-            if (!empty($message['pText'])) $msg = $message['pText']; else $msg = nxs_doFormatMsg($options['msgFormat'], $message); $message['pText'] = $msg; $message['postType'] = $options['postType'];
-            if ( $message['postType']=='I' ||  $message['postType']=='A') { if (isset($message['imageURL'])) $imgURL = trim(nxs_getImgfrOpt($message['imageURL'], $options['imgSize'])); else $imgURL = ''; }
-
-            if (empty($options['tpt'])||!empty($options['glpid'])) {  if (!empty($options['glpid'])) $message['glpid'] = $options['glpid']; if (!empty($options['ps'])) $message['ps'] = $options['ps'];
-                $nt = new nxsAPI_FB(); if (!empty($options['proxy'])&&!empty($options['proxyOn'])){ $nt->proxy['proxy'] = $options['proxy']['proxy']; if (!empty($options['proxy']['up'])) $nt->proxy['up'] = $options['proxy']['up'];};
-                if (!empty($options['ps']) && property_exists($nt, 'ps')) $nt->ps = $options['ps'];
-                if(!empty($options['uName'])) $nt->uInfo['uName'] = $options['uName']; if(!empty($options['uPass'])) $nt->uInfo['uPass'] = $pass;
-                if(!empty($options['ck'])) $nt->ck = $options['ck']; $nt->sid = array('cn'=>$options['uName'],'xs'=>$pass); $res = $nt->post($options['pgID'], $message);
-                if (!empty($res) && is_array($res) && !empty($res['isPosted'])) return $res; else return print_r($res, true);
-            } else {
-                $nt = new nxsAPI_FB(); if (!empty($options['proxy'])&&!empty($options['proxyOn'])){ $nt->proxy['proxy'] = $options['proxy']['proxy']; if (!empty($options['proxy']['up'])) $nt->proxy['up'] = $options['proxy']['up'];};
-                if (!empty($options['ps']) && property_exists($nt, 'ps')) $nt->ps = $options['ps'];
-                $t = $nt->checkToken($options['tpt'], $options['uInfo']['tknUrl']); //echo "<br/>.....checking token....";
-                if (!empty($t)) { $options['accessToken'] = $t; $options = nxs_snapClassFB::getPageToken($options);
-                    if (function_exists('user_can')) { $isItUserWhoCan = (!user_can($postUser, 'manage_options' ) && user_can($postUser, 'haveown_snap_accss')); global $nxs_SNAP;
-                        if ($isItUserWhoCan) $networks = $nxs_SNAP->nxs_acctsU; else $networks = $nxs_SNAP->nxs_accts;
-                        $o = $networks['fb'][$options['ii']]; $o['accessToken'] = $t; $o['tpt'] = '';
-                        nxs_save_glbNtwrks('fb',$o['ii'],$o,'*'); $opVal['tpt'] = $t;  nxs_saveOption($opNm, $opVal);
-                    }
-                }
-            }
-        }
-
         if (substr($options['pgID'],0,1)=='g') { $options['fbURL'] = 'https://www.facebook.com/groups/'.substr($options['pgID'],1).'/'; $options['pgID'] = substr($options['pgID'],1);} // die();
         //## Make Post
 
         //## Get URL info.
         if ($options['postType']!='I' && $options['postType']!='T'){ $url=$message['url']; //#### Let's ask FB to scrape/re-scrape it.
-            $flds=array('id'=>$url, 'scrape'=>'true', 'access_token'=>$options['accessToken'], 'method'=>'post', 'limit'=>250); if (empty($options['tpt'])) $flds['appsecret_proof'] = hash_hmac('sha256', $options['accessToken'], nxs_gas($options['appSec'])); sleep(2);
+            $flds=array('id'=>$url, 'scrape'=>'true', 'access_token'=>$options['accessToken'], 'method'=>'post', 'limit'=>250); $flds['appsecret_proof'] = hash_hmac('sha256', $options['accessToken'], nxs_gas($options['appSec'])); sleep(2);
             $advSet = nxs_mkRemOptsArr(nxs_getNXSHeaders(), '',$flds);  $response =  nxs_remote_post('https://graph.facebook.com', $advSet);
 
             if (is_nxs_error($response)) $badOut['Error'] = "Error(URL-Info): ". print_r($response, true); else { $response = json_decode($response['body'], true);
@@ -79,7 +51,7 @@ if (!class_exists("nxs_class_SNAP_FB")) { class nxs_class_SNAP_FB {
         if (empty($msg)) { if (function_exists('nxs_LogIt')) nxs_LogIt('W', 'Warning','FB - '.$options['nName'],'','Your FB message is empty.','','snap');  $msg = html_entity_decode("&#12288;");  }       //    $msg = html_entity_decode("&#128078;");
 
         if (!empty($options['pageAccessToken'])) {  $mssg = array('access_token'=>$options['pageAccessToken'], 'method'=>'post', 'message'=>$msg);
-            if (empty($options['tpt'])) $mssg['appsecret_proof'] = hash_hmac('sha256', $options['pageAccessToken'], nxs_gas($options['appSec'])); //prr($mssg);
+            $mssg['appsecret_proof'] = hash_hmac('sha256', $options['pageAccessToken'], nxs_gas($options['appSec'])); //prr($mssg);
 
             if ($options['postType']=='I' && trim($imgURL)=='') $options['postType']='T';
             if ($options['postType']=='A' && !(preg_match("/\b(?:(?:https?|ftp):\/\/|www\.)[-a-z0-9+&@#\/%?=~_|!:,.;]*[-a-z0-9+&@#\/%=~_|]/i", $message['url']))) {
@@ -90,7 +62,7 @@ if (!class_exists("nxs_class_SNAP_FB")) { class nxs_class_SNAP_FB {
             } elseif ($options['postType']=='I') { /* $facebook->setFileUploadSupport(true); */ $fbWhere = 'photos'; $mssg['url'] = $imgURL;  $mssg['caption'] =  $mssg['message'];
                 if ($options['imgUpl']=='T') { //## Try to Post to TImeline
 
-                    $aacct = array('access_token'=>$options['pageAccessToken'], 'method'=>'get'); if (empty($options['tpt'])) $aacct['appsecret_proof'] = hash_hmac('sha256', $options['pageAccessToken'], nxs_gas($options['appSec']));
+                    $aacct = array('access_token'=>$options['pageAccessToken'], 'method'=>'get'); $aacct['appsecret_proof'] = hash_hmac('sha256', $options['pageAccessToken'], nxs_gas($options['appSec']));
                     $res = nxs_remote_get( "https://graph.facebook.com/$page_id/albums?".http_build_query($aacct, null, '&'), nxs_mkRemOptsArr(nxs_getNXSHeaders()));
                     if (is_nxs_error($res) || empty($res['body'])) $badOut['Error'] = ' [ERROR(Albums)] '.print_r($res, true); else {
                         $albums = json_decode($res['body'], true);  if (empty($albums)) $badOut['Error'] .= "JSON ERROR (Albums): ".print_r($res, true); else {

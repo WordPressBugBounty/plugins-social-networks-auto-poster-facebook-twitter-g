@@ -347,13 +347,13 @@ class nxs_Filters {
     <?php } }
     public static function print_schedule_metabox( $current_post ) { ?>
    
-   <?php $cr = get_option('NXS_cronCheck'); if (!empty($cr) && is_array($cr) && isset($cr['status']) && $cr['status']=='0') { 
-      global $nxs_SNAP; if (!isset($nxs_SNAP)) return; $gOptions = $nxs_SNAP->nxs_options; 
+   <?php global $nxs_SNAP; if (!isset($nxs_SNAP)) return; $gOptions = $nxs_SNAP->nxs_options;
+      if (nxs_cron_warning_needed($gOptions)) { 
        if (isset($gOptions['forceBrokenCron']) && $gOptions['forceBrokenCron'] =='1') { ?> 
          <span style="color: red"> <?php _e('Your WP Cron is not working correctly. Auto Reposting service is active by force. <br/> This might cause problems. Please see the test results and recommendations', 'social-networks-auto-poster-facebook-twitter-g'); ?>
-         &nbsp;-&nbsp;<a target="_blank" href="<?php global $nxs_snapThisPageUrl; echo esc_url(add_query_arg('do', 'crtest', $nxs_snapThisPageUrl)); ?>">WP Cron Test Results</a></span>
+         &nbsp;-&nbsp;<a target="_blank" href="<?php echo esc_url(nxs_get_admin_url('admin.php?page=nxs-help&do=crtest')); ?>">WP Cron Test Results</a></span>
         <?php } else { ?> <span style="color: red"> <?php _e('Auto Reposting service is Disabled. Your WP Cron is not working correctly. Please see the test results and recommendations', 'social-networks-auto-poster-facebook-twitter-g'); ?>
-     &nbsp;-&nbsp;<a target="_blank" href="<?php global $nxs_snapThisPageUrl; echo esc_url(add_query_arg('do', 'crtest', $nxs_snapThisPageUrl)); ?>">WP Cron Test Results</a></span>
+     &nbsp;-&nbsp;<a target="_blank" href="<?php echo esc_url(nxs_get_admin_url('admin.php?page=nxs-help&do=crtest')); ?>">WP Cron Test Results</a></span>
    <?php return; } } ?>
    
    <?php $options = (!empty($current_post))?maybe_unserialize(get_post_meta( $current_post->ID, 'nxs_rpstr', true )):''; $ii = !empty($options['ii'])?$options['ii']:'0'; $nt = !empty($options['nt'])?$options['nt']:'0'; ?>
@@ -391,15 +391,15 @@ class nxs_Filters {
         foreach ($nxs_snapAvNts as $avNt) { $clName = 'nxs_snapClass'.$avNt['code']; $ntClInst = new $clName();
           if ( isset($networks[$avNt['lcode']]) && count($networks[$avNt['lcode']])>0) { ?>                
             <div class="nxsNPRowGroup">
-            <div class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo NXS_PLURL;?>img/<?php echo $avNt['lcode']; ?>16.png);"><?php echo $avNt['name']; ?></div>
+            <div class="nsx_iconedTitle" style="margin-bottom:1px;background-image:url(<?php echo esc_url(nxs_network_asset_url(!empty($avNt['imgcode']) ? $avNt['imgcode'] : $avNt['lcode'])); ?>);"><?php echo $avNt['name']; ?></div>
             <?php $ntOpts = $networks[$avNt['lcode']]; foreach ($ntOpts as $indx=>$pbo){                
               $savedMeta = (!empty($cp))?maybe_unserialize(get_post_meta( $cp->ID, 'nxs_rpstr_data', true )):''; 
               if (!empty($cp) && !empty($savedMeta)){ $svdNTs=!empty($savedMeta['nxs_NPNts'])?$savedMeta['nxs_NPNts']:''; $isCh=!empty($svdNTs)&&!empty($svdNTs[strtolower($avNt['code'])][$indx])&&$svdNTs[strtolower($avNt['code'])][$indx] == '1'; } 
                   else $isCh = (int)$pbo['do'] == 1;
               ?> 
               <div class="nxsNPRowLine">
-            <input class="nxsNPDoChb" value="<?php echo esc_attr($avNt['lcode'].'--'.$indx); ?>" name="nxs_NPNts[]" type="checkbox" <?php checked($isCh); ?> />
-                <?php echo esc_html($avNt['name']); ?> <i style="color: #005800;"><?php if($pbo['nName']!='') echo '('.esc_html($pbo['nName']).')'; ?></i>
+                <input class="nxsNPDoChb" value="<?php echo $avNt['lcode']; ?>--<?php echo $indx; ?>" name="nxs_NPNts[]" type="checkbox" <?php if ($isCh) echo "checked"; ?> />               
+                <?php echo $avNt['name']; ?> <i style="color: #005800;"><?php if($pbo['nName']!='') echo "(".$pbo['nName'].")"; ?></i>
               </div>              
             <?php } ?></div><?php  
         } } ?> 
@@ -699,7 +699,7 @@ class nxs_Filters {
         <div class="">
           <div class="">
             <div class="nxs_medium_field_txn"> <label class="field_title"> <?php _e( 'Custom Field Name', 'social-networks-auto-poster-facebook-twitter-g' ); ?>:</label><br/>
-                <input name="<?php echo esc_attr(self::makeInputName("nxs_meta_key$postfix", $nt, $ii)); ?>" id="nxs<?php echo esc_attr($nt.$ii); ?>_meta_key<?php echo esc_attr($postfix); ?>" value="<?php echo esc_attr(!empty($metaSettings['post_meta'][$jj]["key"])?$metaSettings['post_meta'][$jj]["key"]:'');?>"  style="font-weight: bold; color: #005800; border: 1px solid #ACACAC; width: 95%;"/>
+<input name="<?php echo self::makeInputName("nxs_meta_key$postfix", $nt, $ii); ?>" id="nxs<?php echo esc_attr($nt.$ii); ?>_meta_key<?php echo $postfix; ?>" value="<?php echo !empty($metaSettings['post_meta'][$jj]["key"])?$metaSettings['post_meta'][$jj]["key"]:'';?>"  style="font-weight: bold; color: #005800; border: 1px solid #ACACAC; width: 95%;"/>
             </div>
             <div class="nxs_shortXL_field"><?php
             echo '<div class="'. 'nxs_short_field" rel="'. $rel .'">';
@@ -707,7 +707,7 @@ class nxs_Filters {
             self::print_select( (!empty( $current_post->ID))?$current_post->ID:0, $compare_options, "nxs".$nt.$ii."_meta_operator$postfix", !empty($metaSettings['post_meta'][$jj]["operator"])?$metaSettings['post_meta'][$jj]["operator"]:'', false, false, self::makeInputName("nxs_meta_operator$postfix", $nt, $ii),'hui' ); echo '</div>';
             ?></div>
             <div class="nxs_mediumXL_field_txn"><label class="field_title"> <?php _e( 'Custom Field Value', 'social-networks-auto-poster-facebook-twitter-g' ); ?>:</label><br/>
-                <input name="<?php echo esc_attr(self::makeInputName("nxs_meta_value$postfix", $nt, $ii)); ?>[]" id="nxs<?php echo esc_attr($nt.$ii); ?>_meta_value<?php echo esc_attr($postfix); ?>" style="font-weight: bold; color: #005800; border: 1px solid #ACACAC; width: 95%;" value="<?php echo esc_attr(!empty($metaSettings['post_meta'][$jj]["value"])?$metaSettings['post_meta'][$jj]["value"][0]:'');?>"/>
+                <input name="<?php echo self::makeInputName("nxs_meta_value$postfix", $nt, $ii); ?>[]" id="nxs<?php echo esc_attr($nt.$ii); ?>_meta_value<?php echo $postfix; ?>" style="font-weight: bold; color: #005800; border: 1px solid #ACACAC; width: 95%;" value="<?php echo !empty($metaSettings['post_meta'][$jj]["value"])?$metaSettings['post_meta'][$jj]["value"][0]:'';?>"/>
             </div>        
           </div>
           <div class="">

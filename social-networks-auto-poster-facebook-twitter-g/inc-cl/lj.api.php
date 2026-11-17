@@ -28,7 +28,7 @@ if (!class_exists("nxs_class_SNAP_LJ")) { class nxs_class_SNAP_LJ {
       if (!empty($message['pText'])) $msg = $message['pText']; else $msg = nxs_doFormatMsg($options['msgFormat'], $message); 
       if (!empty($message['pTitle'])) $msgT = $message['pTitle']; else $msgT = nxs_doFormatMsg($options['msgTFormat'], $message);      
       
-      require_once ('apis/xmlrpc-client.php'); if (!empty($options['ljSrv']) && $options['ljSrv']=='DW') $server = 'dreamwidth.org'; else $server = 'livejournal.com';      
+      require_once(NXS_PLPATH . 'inc-cl/apis/xmlrpc-client.php'); if (!empty($options['ljSrv']) && $options['ljSrv']=='DW') $server = 'dreamwidth.org'; else $server = 'livejournal.com';      
       $nxsToLJclient = new NXS_XMLRPC_Client('https://www.'.$server.'/interface/xmlrpc'); $nxsToLJclient->debug = false;// prr($options);
       if (!empty($options['proxy'])&&!empty($options['proxyOn'])){ $nxsToLJclient->proxy['proxy'] = $options['proxy']['proxy']; if (!empty($options['proxy']['up']))  $nxsToLJclient->proxy['up'] = $options['proxy']['up']; }
 

@@ -1,6 +1,6 @@
 <?php    
 //## NextScripts Tumblr Connection Class
-$nxs_snapAvNts[] = array('code'=>'TR', 'lcode'=>'tr', 'name'=>'Tumblr', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Create a text post, image post, audio or video post on your Tumbler blog. HTML is supported.');
+$nxs_snapAvNts[] = array('code'=>'TR', 'lcode'=>'tr', 'name'=>'Tumblr', 'type'=>'Blogs/Publishing Platforms', 'ptype'=>'F', 'status'=>'A', 'desc'=>'Create text, image, audio-link or video-link posts on your Tumblr blog.');
 
 if (!class_exists("nxs_snapClassTR")) { class nxs_snapClassTR extends nxs_snapClassNT { 
   var $ntInfo = array('code'=>'TR', 'lcode'=>'tr', 'name'=>'Tumblr', 'defNName'=>'', 'tstReq' => true, 'instrURL'=>'https://www.nextscripts.com/instructions/tumblr-auto-poster-setup-installation/');      
@@ -27,36 +27,37 @@ if (!class_exists("nxs_snapClassTR")) { class nxs_snapClassTR extends nxs_snapCl
   //#### Show Unit  Settings  
   function checkIfSetupFinished($options) { return !empty($options['pgID']) && !empty($options['accessToken']); }
   public function doAuth() { $ntInfo = $this->ntInfo; global $nxs_snapSetPgURL;
-      if (isset($_GET['acc'])) { $acc = absint($_GET['acc']); if (!nxs_snap_user_can_access() || !isset($this->nt[$acc])) return; $options = $this->nt[$acc];
-        if ( isset($_GET['auth']) && $_GET['auth']=='tr'){ $this->showAuthTop(); require_once('apis/trOAuth.php');
-          $consumer_key = nxs_gak($options['appKey']); $consumer_secret = nxs_gas($options['appSec']); $callback_url = add_query_arg(array('auth'=>'tra','acc'=>$acc,'nxs_state'=>nxs_oauth_state_create('tr', $acc)), $nxs_snapSetPgURL);
-          $tum_oauth = new TumblrOAuth($consumer_key, $consumer_secret); $request_token = $tum_oauth->getRequestToken($callback_url);
+      if (isset($_GET['acc'])) { $acc = sanitize_text_field($_GET['acc']); $options = $this->nt[$acc];
+        if ( isset($_GET['auth']) && $_GET['auth']=='tr'){ $this->showAuthTop(); require_once(NXS_PLPATH . 'inc-cl/apis/trOAuth.php');
+          $consumer_key = nxs_gak($options['appKey']); $consumer_secret = nxs_gas($options['appSec']); $callback_url = $nxs_snapSetPgURL."&auth=tra&acc=".$acc;
+          $tum_oauth = new TumblrOAuth($consumer_key, $consumer_secret); prr($tum_oauth ); $request_token = $tum_oauth->getRequestToken($callback_url); echo "####"; prr($request_token);
           $options['oAuthToken'] = $request_token['oauth_token']; $options['oAuthTokenSecret'] = $request_token['oauth_token_secret'];// prr($tum_oauth ); die();
           switch ($tum_oauth->http_code) { case 200: $url = $tum_oauth->getAuthorizeURL($options['oAuthToken']); nxs_save_glbNtwrks($ntInfo['lcode'],$acc,$options,'*');
-            echo '<div style="text-align:center;color:green; font-weight: bold; font-size:20px;" >ALL OK. Redirecting to authorization....</div><script type="text/javascript">setTimeout(function(){ window.location = "'.esc_url($url).'"; }, 1000);</script>'; break;
+            echo '<div style="text-align:center;color:green; font-weight: bold; font-size:20px;" >ALL OK. Redirecting to authorization....</div><script type="text/javascript">setTimeout(function(){ window.location = "'.$url.'"; }, 1000);</script>'; break;
             default: echo '<br/><b style="color:red">Could not connect to Tumblr. Refresh the page or try again later.</b>'; die('</div></div>');
           } die('</div></div>');
         }
-        if ( isset($_GET['auth']) && $_GET['auth']=='tra'){ if (empty($_GET['nxs_state']) || !nxs_oauth_state_validate(wp_unslash($_GET['nxs_state']), 'tr', $state_account) || absint($state_account)!==$acc) wp_die(esc_html__('Invalid or expired Tumblr authorization state.', 'social-networks-auto-poster-facebook-twitter-g'), '', array('response'=>403)); $this->showAuthTop(); require_once('apis/trOAuth.php');
+        if ( isset($_GET['auth']) && $_GET['auth']=='tra'){ $this->showAuthTop(); require_once(NXS_PLPATH . 'inc-cl/apis/trOAuth.php'); prr($options);
           $consumer_key = nxs_gak($options['appKey']); $consumer_secret = nxs_gas($options['appSec']);
           $tum_oauth = new TumblrOAuth($consumer_key, $consumer_secret, $options['oAuthToken'], $options['oAuthTokenSecret']);
-          $options['accessToken'] = $tum_oauth->getAccessToken(sanitize_text_field(wp_unslash($_REQUEST['oauth_verifier']))); if (empty($options['accessToken']['oauth_token']) || empty($options['accessToken']['oauth_token_secret'])) die(esc_html__('Tumblr token exchange failed.', 'social-networks-auto-poster-facebook-twitter-g')); $options['accessTokenSec'] = $options['accessToken']['oauth_token_secret']; $options['accessToken'] = $options['accessToken']['oauth_token'];
+          $options['accessToken'] = $tum_oauth->getAccessToken(sanitize_text_field($_REQUEST['oauth_verifier']));  prr($tum_oauth, '**tum_oauth ==1== **');
+          prr($options['accessToken'], '**GOT ACCESS TOKEN **'); $options['accessTokenSec'] =  $options['accessToken']['oauth_token_secret']; $options['accessToken'] =  $options['accessToken']['oauth_token'];
           $tum_oauth = new TumblrOAuth($consumer_key, $consumer_secret,  $options['accessToken'], $options['accessTokenSec']);
-          $userinfo = $tum_oauth->get('https://api.tumblr.com/v2/user/info');
-          if ($userinfo->meta->status=='401') die(esc_html__('The authorized Tumblr user cannot access the selected blog.', 'social-networks-auto-poster-facebook-twitter-g'));
+          $userinfo = $tum_oauth->get('https://api.tumblr.com/v2/user/info'); prr($tum_oauth, '**tum_oauth ==2== **'); prr($userinfo, '**USERINFO**'); // prr($url); die();
+          if ($userinfo->meta->status=='401') die("<span style='color:red;'>ERROR #1: Authorized USER don't have access to the specified blog: <span style='color:darkred; font-weight: bold;'>".$options['pgID']."</span></span></div>");
           if (is_array($userinfo->response->user->blogs)) { $options['authUser'] = $userinfo->response->user->name; $blogs = ''; $opNm = 'nxs_snap_tr_'.sha1('nxs_snap_tr'.$options['authUser'].nxs_gak($options['appKey']));
             foreach ($userinfo->response->user->blogs as $blog){ if (!empty($blog->uuid)) $uuid = $blog->uuid; else $uuid = rtrim(str_ireplace('http://','',str_ireplace('https://','',$blog->url)), '/');  if (empty($options['pgID'])) $options['pgID'] = $uuid;
-              $blogs .= '<option '.($options['pgID']==$uuid ? 'selected="selected"':'').' value="'.esc_attr($uuid).'">'.esc_html($blog->name).' ('.esc_html($uuid).')</option>';
+              $blogs .= '<option '.($options['pgID']==$uuid ? 'selected="selected"':'').' value="'.$uuid.'">'.$blog->name.' ('.$uuid.')</option>';
             } nxs_save_glbNtwrks($ntInfo['lcode'],$acc,$options,'*'); $opVal['blogList'] = $blogs;  nxs_saveOption($opNm, $opVal);
-            echo '<div style="text-align:center;color:green; font-weight: bold; font-size:22px;" >ALL OK. You have been authorized. Refreshing page....</div><script type="text/javascript">setTimeout(function(){ window.location = "'.esc_url(nxs_get_admin_url('admin.php?page=nxssnap')).'"; }, 3000);</script>'; die('</div></div>');
-          } die(esc_html__('The authorized Tumblr user cannot access the selected blog.', 'social-networks-auto-poster-facebook-twitter-g'));
+            echo '<div style="text-align:center;color:green; font-weight: bold; font-size:22px;" >ALL OK. You have been authorized. Refreshing page....</div><script type="text/javascript">setTimeout(function(){ window.location = "'.$nxs_snapSetPgURL.'"; }, 3000);</script>'; die('</div></div>');
+          } prr($userinfo); die("<span style='color:red;'>ERROR #2: Authorized USER don't have access to the specified blog: <span style='color:darkred; font-weight: bold;'>".$options['pgID']."</span></span></div></div>");
       }
     }
   }    
   
   function getListOfBlogs($networks){ $opVal = array(); $opNm = 'nxs_snap_tr_'.sha1('nxs_snap_tr'.sanitize_text_field($_POST['u']).sanitize_text_field($_POST['p'])); $opVal = nxs_getOption($opNm); $ii = sanitize_key($_POST['ii']);
      $currPstAs = !empty($_POST['cBlog'])?sanitize_text_field($_POST['cBlog']):(!empty($networks['tr'][$ii])?$networks['tr'][$ii]['pgID']:'');
-     if (empty($_POST['force']) && !empty($opVal['blogList']) ) $pgs = $opVal['blogList']; else { $options = $networks['tr'][$ii]; require_once('apis/trOAuth.php'); 
+     if (empty($_POST['force']) && !empty($opVal['blogList']) ) $pgs = $opVal['blogList']; else { $options = $networks['tr'][$ii]; require_once(NXS_PLPATH . 'inc-cl/apis/trOAuth.php'); 
        $tum_oauth = new TumblrOAuth(nxs_gak($options['appKey']), nxs_gas($options['appSec']),  $options['accessToken'], $options['accessTokenSec']); $userinfo = $tum_oauth->get('https://api.tumblr.com/v2/user/info');// prr($userinfo);
        if ($userinfo->meta->status=='401') { $outMsg = '<b style="color:red;">'.__('Auth Problem').' HTTP-401 (Not Authorized) &nbsp;-&nbsp;</b>'; if (!empty($_POST['isOut'])) echo $outMsg; return $outMsg; }
        if (is_array($userinfo->response->user->blogs)) { $options['authUser'] = $userinfo->response->user->name; $pgs = ''; 
@@ -85,11 +86,11 @@ if (!class_exists("nxs_snapClassTR")) { class nxs_snapClassTR extends nxs_snapCl
               if (!empty($options['pgID'])) { echo (!empty($options['pgID']) && stripos($pgi,$options['pgID'])===false)?'<option selected="selected" value="'.$options['pgID'].'">'.$options['pgID'].'</option>':''; }            
               if (!empty($options['pgID'])) { $pgi = str_ireplace('selected="selected" ','',$pgi); $pgi = str_ireplace('value="'.$options['pgID'].'"','selected="selected" value="'.$options['pgID'].'"',$pgi); } echo $pgi;
             ?><option value="a"><?php _e('.... Enter the Blog ID'); ?></option>
-      </select><div id="nxsTRInfoDivBlock<?php echo esc_attr($ii); ?>" style="display: inline-block;"> <input type="text" style="display: none;" id="trInpCst<?php echo esc_attr($ii); ?>" value="<?php echo esc_attr($options['pgID']); ?>" onchange="nxs_InpToDDChange(jQuery(this));" data-tid="trpgID<?php echo esc_attr($ii); ?>" />
+          </select><div id="nxsTRInfoDivBlock<?php echo esc_attr($ii); ?>" style="display: inline-block;"> <input type="text" style="display: none;" id="trInpCst<?php echo esc_attr($ii); ?>" value="<?php echo $options['pgID']; ?>" onchange="nxs_InpToDDChange(jQuery(this));" data-tid="trpgID<?php echo esc_attr($ii); ?>" />         
           <div style="display: inline-block;"><a onclick="nxs_trGetBlogs(<?php echo esc_attr($ii);?>, 1); jQuery(this).blur(); return false;" href="#"><img id="<?php echo esc_attr($nt.$ii);?>rfrshImg" style="vertical-align: middle;" src='<?php echo NXS_PLURL; ?>img/refresh16.png' /></a></div></div> <img id="<?php echo esc_attr($nt.$ii);?>ldImg" style="display: none;vertical-align: middle;" src='<?php echo NXS_PLURL; ?>img/ajax-loader-sm.gif' />
           </div>          
           </div> <div id="nxsTRMsgDiv<?php echo esc_attr($ii); ?>"><?php if (!empty($options['uMsg'])) echo $options['uMsg']; ?><?php if ($isNew) { ?><?php _e('Please authorize your account', 'nxs_snap'); ?><?php } ?></div>                                                                                                    
-      </div> <?php } ?> <input type="hidden" id="trAuthUser<?php echo esc_attr($ii); ?>" value="<?php echo esc_attr($options['authUser']); ?>"/> <br/><br/>
+    </div> <?php } ?> <input type="hidden" id="trAuthUser<?php echo esc_attr($ii); ?>" value="<?php echo $options['authUser']; ?>"/> <br/><br/> 
     
     <?php $this->elemKeySecret($ii,'OAuth Consumer Key','Secret Key', $options['appKey'], $options['appSec'],'appKey','appSec','https://www.tumblr.com/oauth/apps'); ?>
     
@@ -142,7 +143,7 @@ if (!class_exists("nxs_snapClassTR")) { class nxs_snapClassTR extends nxs_snapCl
       if($options['appSec']=='') { ?>
             <b>Authorize Your Tumblr Account</b>. Please save your settings and come back here to Authorize your account.
             <?php } else { if(!empty($options['accessToken'])) { ?>
-        Your Tumblr Account has been authorized. User ID: <?php echo esc_html($options['authUser']); ?>| Blog ID: <?php echo esc_html($options['pgID']); ?>.
+            Your Tumblr Account has been authorized. User ID: <?php echo $options['authUser']; ?>| Blog ID: <?php echo $options['pgID']; ?>. 
             You can Re- <?php } ?>            
             <a href="<?php echo $nxs_snapSetPgURL.(stripos($nxs_snapSetPgURL, '?')!==false?'&':'?');?>auth=tr&acc=<?php echo esc_attr($ii); ?>">Authorize Your Tumblr Account</a> 
               <?php if (empty($options['accessTokenSec'])) { ?> <div class="blnkg">&lt;=== Authorize your account ===</div> <?php } ?>            
@@ -233,8 +234,10 @@ if (!class_exists("nxs_snapClassTR")) { class nxs_snapClassTR extends nxs_snapCl
       $message['imageURL'] = $imgURL; $post = get_post($postID);
       $message['postDate'] = (($options['useOrDate']=='1' && $post->post_date_gmt!='0000-00-00 00:00:00')?$post->post_date_gmt:gmdate("Y-m-d H:i:s", strtotime($post->post_date)))." GMT";  //## Adds date to Tumblr post. Thanks to Kenneth Lecky
       
-      if($options['postType']=='V') { $vids = nsFindVidsInPost($post); if (count($vids)>0) $ytUrl = $vids[0]; if (trim($ytUrl)=='') $options['postType']='T'; }
-      if($options['postType']=='U') { $aud = nsFindAudioInPost($post); if (count($aud)>0) $aUrl = $aud[0]; if (trim($aUrl)=='') $options['postType']='T'; }
+      if($options['postType']=='V') { $vids = nsFindVidsInPost($post); $videoURL = count($vids)>0 ? $vids[0] : '';
+        if ($videoURL==='' && preg_match('~https?://(?:www\.|player\.)?vimeo\.com/(?:video/)?([0-9]{6,12})~i', $post->post_content, $vimeoMatch)) $videoURL = 'https://vimeo.com/'.$vimeoMatch[1];
+        if (trim($videoURL)=='') $options['postType']='T'; else $message['videoURL'] = $videoURL; }
+      if($options['postType']=='U') { $aud = nsFindAudioInPost($post); $audioURL = count($aud)>0 ? $aud[0] : ''; if (trim($audioURL)=='') $options['postType']='T'; else $message['audioURL'] = $audioURL; }
       
       $message['tags'] = (!empty($options['inclTags'])?$message['tags']:''). (!empty($options['inclCats']) && !empty($options['inclTags']) && !empty($message['tags']) && !empty($message['cats'])?', ':'').(!empty($options['inclCats'])? $message['cats']:'');
       

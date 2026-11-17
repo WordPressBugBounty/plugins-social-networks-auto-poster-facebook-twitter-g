@@ -186,26 +186,6 @@ function nxs_svSetAdv(nt,ii,divIn,divOut,loc,isModal){ jQuery(':focus').blur();
           if (sObj.val()=='a'){ sObj.hide(); jQuery('#gpPgIDcst'+ii).show(); }
           if (sObj.val().charAt(0)=='c'){ jQuery('#gp'+ii+'ldImg').show(); jQuery('#gp'+ii+'rfrshImg').hide();  var pg = sObj.val(); nxs_gpGetCommCats(ii,0); }
       }
-//## RD
-      function nxs_rdGetSRs(ii,force){ var u = jQuery('#apRDUName'+ii).val(); var p = jQuery('#apRDPass'+ii).val(); var rdSR = jQuery('#rdSubReddit'+ii).val(); jQuery("#rdSubReddit"+ii).focus();
-            jQuery('#rd'+ii+'rfrshImg').hide();  jQuery('#rd'+ii+'ldImg').show(); jQuery("#nxsRDMsgDiv"+ii).html("&nbsp;"); jQuery("#rdSubReddit"+ii).html("<option value=\"\">Getting SubReddits.......</option>");
-            jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfSubReddits", nt:"RD", u:u, p:p, ii:ii, rdSR:rdSR, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){  
-                 if (j.indexOf('<option')>-1) jQuery("#rdSubReddit"+ii).html(j); else jQuery("#nxsRDMsgDiv"+ii).html(j); jQuery('#rd'+ii+'ldImg').hide(); jQuery('#rd'+ii+'rfrshImg').show();
-            }, "html")          
-      }
-      function nxs_rdSRChange(ii, sObj){  
-          if (sObj.val()=='a'){ sObj.hide(); jQuery('#rdSRIDCst'+ii).show(); } 
-      }                  
-//## PN
-      function nxs_pnGetBoards(ii,force){ var u = jQuery('#apPNUName'+ii).val(); var p = jQuery('#apPNPass'+ii).val(); var s = jQuery('#sesDivpn'+ii+'session').val(); var pnBoard = jQuery('#pnBoard'+ii).val(); jQuery("#pnBoard"+ii).focus();
-            jQuery('#pn'+ii+'rfrshImg').hide();  jQuery('#pn'+ii+'ldImg').show(); jQuery("#nxsPNMsgDiv"+ii).html("&nbsp;"); jQuery("#pnBoard"+ii).html("<option value=\"\">Getting boards.......</option>");
-            jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfPNBoards", nt:"PN", u:u, p:p, s:s, ii:ii, pnBoard:pnBoard, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){
-                 if (j.indexOf('<option')>-1) jQuery("#pnBoard"+ii).html(j); else jQuery("#nxsPNMsgDiv"+ii).html(j); jQuery('#pn'+ii+'ldImg').hide(); jQuery('#pn'+ii+'rfrshImg').show();
-            }, "html")          
-      }
-      function nxs_pnBoardChange(ii, sObj){  
-          if (sObj.val()=='a'){ sObj.hide(); jQuery('#pnBRDIDCst'+ii).show(); } 
-      }                  
 //## TR
       function nxs_trGetBlogs(ii,force){ var u = jQuery('#trappKey'+ii).val(); var p = jQuery('#trAuthUser'+ii).val(); var cBlog = jQuery('#trpgID'+ii).val(); jQuery("#trpgID"+ii).focus();
             jQuery('#tr'+ii+'rfrshImg').hide();  jQuery('#tr'+ii+'ldImg').show(); jQuery("#nxsTRMsgDiv"+ii).html("&nbsp;"); jQuery("#trpgID"+ii).html("<option value=\"\">Getting Blogs.......</option>");
@@ -217,7 +197,7 @@ function nxs_svSetAdv(nt,ii,divIn,divOut,loc,isModal){ jQuery(':focus').blur();
           if (sObj.val()=='a'){ sObj.hide(); jQuery('#trInpCst'+ii).show(); } 
       }     
 //## LI
-      function nxs_liGetPages(ii,force){ var u = jQuery('#liappKey'+ii).val(); var p = jQuery('#liAuthUser'+ii).val(); var cBlog = jQuery('#lipgID'+ii).val(); jQuery("#lipgID"+ii).focus();
+      function nxs_liGetPages(ii,force){ var u = jQuery('#liAuthUser'+ii).val(); var p = jQuery('#liappKey2'+ii).val(); var cBlog = jQuery('#lipgID'+ii).val(); jQuery("#lipgID"+ii).focus();
             jQuery('#li'+ii+'rfrshImg').hide();  jQuery('#li'+ii+'ldImg').show(); jQuery("#nxsLIMsgDiv"+ii).html("&nbsp;"); jQuery("#lipgID"+ii).html("<option value=\"\">Getting Pages.......</option>");
             jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfPagesLIV2", nt:"LI", u:u, p:p, ii:ii, cBlog:cBlog, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){  
                  if (j.indexOf('<option')>-1) jQuery("#lipgID"+ii).html(j); else jQuery("#nxsLIMsgDiv"+ii).html(j); jQuery('#li'+ii+'ldImg').hide(); jQuery('#li'+ii+'rfrshImg').show();
@@ -226,21 +206,6 @@ function nxs_svSetAdv(nt,ii,divIn,divOut,loc,isModal){ jQuery(':focus').blur();
       function nxs_liPageChange(ii, sObj){  
           if (sObj.val()=='a'){ sObj.hide(); jQuery('#liInpCst'+ii).show(); } 
       }
-      function nxs_li2GetPages(ii,force){ var u = jQuery('#apLIUName'+ii).val(); var p = jQuery('#apLIPass'+ii).val(); jQuery('#nxsLI2InfoDiv'+ii).show(); var pgcID = jQuery('#li2pgID'+ii).val(); var pggID = jQuery('#li2GpgID'+ii).val(); jQuery("#li2pgID"+ii).focus();
-            jQuery('#li'+ii+'2rfrshImg').hide();  jQuery('#li'+ii+'2ldImg').show();   jQuery('#li'+ii+'3ldImg').show(); jQuery("#nxsLI2MsgDiv"+ii).html("&nbsp;"); jQuery("#li2pgID"+ii).html("<option value=\"\">Getting Pages.......</option>");
-            jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfPagesNXS", nt:"LI", u:u, p:p, ii:ii, pgcID:pgcID, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){  
-               if (j.indexOf('<option')>-1) jQuery("#li2pgID"+ii).html(j); else jQuery("#nxsLI2MsgDiv"+ii).html(j); jQuery('#li'+ii+'2ldImg').hide(); jQuery('#nxsLI2GInfoDiv'+ii).show(); jQuery("#li2GpgID"+ii).html("<option value=\"\">Getting Groups.......</option>");                 
-               jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfGroupsNXS", nt:"LI", u:u, p:p, ii:ii, pggID:pggID, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){  
-                  if (j.indexOf('<option')>-1) jQuery("#li2GpgID"+ii).html(j); else jQuery("#nxsLI2MsgDiv"+ii).html(j);  jQuery('#li'+ii+'3ldImg').hide(); jQuery('#li'+ii+'2rfrshImg').show();
-               }, "html")                  
-            }, "html")          
-      }
-      function nxs_li2PageChange(ii, sObj){  
-          if (sObj.val()=='a'){ sObj.hide(); jQuery('#li2InpCst'+ii).show(); jQuery("#li2InpCst"+ii).focus(); } 
-      }     
-      function nxs_li2GPageChange(ii, sObj){  
-          if (sObj.val()=='a'){ sObj.hide(); jQuery('#li2GInpCst'+ii).show(); jQuery("#li2GInpCst"+ii).focus(); } 
-      }      
 //## XI
       function nxs_xi2GetPages(ii,force){ var u = jQuery('#apXIUName'+ii).val(); var p = jQuery('#apXIPass'+ii).val(); jQuery('#nxsXI2InfoDiv'+ii).show(); var pgcID = jQuery('#xi2pgID'+ii).val(); var pggID = jQuery('#xi2GpgID'+ii).val(); jQuery("#xi2pgID"+ii).focus();
             jQuery('#xi'+ii+'2rfrshImg').hide();  jQuery('#xi'+ii+'2ldImg').show();   jQuery('#xi'+ii+'3ldImg').show(); jQuery("#nxsxi2MsgDiv"+ii).html("&nbsp;"); jQuery("#xi2pgID"+ii).html("<option value=\"\">Getting Pages.......</option>");
@@ -286,12 +251,6 @@ function nxs_svSetAdv(nt,ii,divIn,divOut,loc,isModal){ jQuery(':focus').blur();
       function nxs_fbPageChange(ii, sObj){  
           if (sObj.val()=='a'){ sObj.hide(); jQuery('#fbInpCst'+ii).show(); jQuery("#fbInpCst"+ii).focus(); } 
       }
-      function nxs_fb2GetPages(ii,u,p,force){ var pgID = jQuery('#fbpgID'+ii).val(); jQuery("#fbpgID"+ii).focus();
-            jQuery('#fb'+ii+'rfrshImg').hide();  jQuery('#fb'+ii+'ldImg').show(); jQuery("#nxsFBMsgDiv"+ii).html("&nbsp;"); jQuery("#fbpgID"+ii).html("<option value=\"\">Getting Pages.......</option>");
-            jQuery.post(ajaxurl,{action: 'nxs_snap_aj',"nxsact":"getItFromNT", "fName":"getListOfPagesNX", nt:"FB", u:u, p:p, ii:ii, pgID:pgID, force:force, isOut:1, nxs_mqTest:"'", _wpnonce: jQuery('#nxsSsPageWPN_wpnonce').val()}, function(j){  
-                 if (j.indexOf('<option')>-1) jQuery("#fbpgID"+ii).html(j); else jQuery("#nxsFBMsgDiv"+ii).html(j); jQuery('#fb'+ii+'ldImg').hide(); jQuery('#fb'+ii+'rfrshImg').show();
-            }, "html")          
-      }                 
       
 //## Common Input to DropDown Function.             
       function nxs_InpToDDChange(tObj) { var sObj = jQuery('#'+tObj.data('tid')); sObj.prepend( jQuery("<option/>", { value: tObj.val(), text: tObj.val() })); tObj.hide(); sObj.prop("selectedIndex", 0).trigger('change'); sObj.show(); }            
@@ -402,7 +361,7 @@ function nxs_TWCharsLeft(tweet) {
     var virtualTweet = tweet;
     var filler = "01234567890123456789";
     var extractedUrls = twttr.txt.extractUrlsWithIndices(tweet);
-    var remaining = 140;
+    var remaining = 280;
     lenUrlArr = extractedUrls.length;
     if ( lenUrlArr > 0 ) {
         for (var i = 0; i < lenUrlArr; i++) {
@@ -502,7 +461,7 @@ jQuery(document).ready(function() {
 (function($) {
   $(function() {                        
      jQuery('.showLic').on('click', function(e /*, params */) {     e.preventDefault();       
-         jQuery.pgwModal({ target: '#nxs_showLicForm', title: 'Enter your activation key', maxWidth: 800, closeOnBackgroundClick : false});              
+         jQuery.pgwModal({ target: '#nxs_showLicForm', title: 'Enter your activation key', maxWidth: 550, closeOnBackgroundClick : false});              
      });     
      jQuery('#checkAPI2x').bind('click', function(e) { e.preventDefault(); jQuery("#checkAPI2xLoadingImg").show(); doLic(); });                                      
      
@@ -642,7 +601,7 @@ function doGetHideNTBlock(bl,ii){ if (jQuery('#apDoS'+bl+ii).length<1 || jQuery(
         //var filtersReset = jQuery('#catSelA'+bl+ii).length && jQuery('#catSelA'+bl+ii).val() == 'X'; if (filtersReset) jQuery('#catSelA'+bl+ii).remove();
         //## Show data
         jQuery('#nxsNTSetDiv'+bl+ii).html(j); nxs_doTabsInd('#nxsNTSetDiv'+bl+ii); nxs_V4_filter_mainJS(jQuery);
-        jQuery("#"+bl+ii+"LoadingImg").hide(); jQuery('#do'+bl+ii+'Div').show(); jQuery('#do'+bl+ii+'AG').text('[Hide Settings]'); jQuery('#apDoS'+bl+ii).val('1');        
+        jQuery("#"+bl+ii+"LoadingImg").hide(); jQuery('#do'+bl+ii+'Div').show(); jQuery('#do'+bl+ii+'AG').text('[Hide Settings]'); nxs_setAccountSettingsState(bl,ii,'1');
         if (jQuery('#rbtn'+bl.toLowerCase()+ii).attr('type') != 'checkbox') { jQuery('#rbtn'+bl.toLowerCase()+ii).attr('type', 'checkbox'); 
           //jQuery('#rbtn'+bl.toLowerCase()+ii).iCheck('update'); 
           jQuery('#rbtn'+bl.toLowerCase()+ii).iCheck('destroy'); jQuery('#rbtn'+bl.toLowerCase()+ii).iCheck({checkboxClass: 'icheckbox_minimal-blue', radioClass: 'iradio_minimal-blue', increaseArea: '20%'});}         
@@ -650,9 +609,11 @@ function doGetHideNTBlock(bl,ii){ if (jQuery('#apDoS'+bl+ii).length<1 || jQuery(
         //## selectize filter controls
         //jQuery(".nxsSelIt").selectize( { create: true,  persist: false, plugins:  ['remove_button'] } );
       }, "html")
-    } else { jQuery('#do'+bl+ii+'Div').detach().appendTo('#nxsNTSetDiv'+bl+ii); jQuery('#do'+bl+ii+'Div').show(); jQuery('#do'+bl+ii+'AG').text('[Hide Settings]'); jQuery('#apDoS'+bl+ii).val('1'); }
-  } else { jQuery('#do'+bl+ii+'Div').hide(); jQuery('#do'+bl+ii+'AG').text('[Show Settings]'); jQuery('#apDoS'+bl+ii).val('0'); }
+    } else { jQuery('#do'+bl+ii+'Div').detach().appendTo('#nxsNTSetDiv'+bl+ii); jQuery('#do'+bl+ii+'Div').show(); jQuery('#do'+bl+ii+'AG').text('[Hide Settings]'); nxs_setAccountSettingsState(bl,ii,'1'); }
+  } else { jQuery('#do'+bl+ii+'Div').hide(); jQuery('#do'+bl+ii+'AG').text('[Show Settings]'); nxs_setAccountSettingsState(bl,ii,'0'); }
 }
+
+function nxs_setAccountSettingsState(bl,ii,state){ var field=jQuery('#apDoS'+bl+ii); if(field.length<1){field=jQuery('<input>',{type:'hidden',id:'apDoS'+bl+ii,name:'apDoS'+bl+ii});jQuery('#do'+bl+ii+'Div').prepend(field);} field.val(state); }
 
 function nxs_showHideBlock(iid, iclass){jQuery('.'+iclass).hide(); jQuery('#'+iid).show();}
             

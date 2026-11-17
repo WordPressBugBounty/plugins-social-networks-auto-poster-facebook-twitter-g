@@ -1,7 +1,7 @@
 <?php   
 //## NXS/OWS Common Functions.
 if (!function_exists('prr')){ function prr($str,$id='') { $f = ''; $t = debug_backtrace(); if (isset($t[2])) $f = $t[2]['function'];
-  $label = $f.(!empty($id)?' ('.$id.')':''); echo esc_html($label)."<br/><pre>".esc_html(print_r($str, true))."</pre>\r\n";
+  if (function_exists('nxs_redact_sensitive_data')) $str = nxs_redact_sensitive_data($str); $label = $f.(!empty($id)?' ('.$id.')':''); echo esc_html($label)."<br/><pre>".esc_html(print_r($str, true))."</pre>\r\n";
 }}
 if (!function_exists('nsx_stripSlashes')){ function nsx_stripSlashes(&$value){$value = stripslashes($value);}}
 if (!function_exists('nsx_fixSlashes')){ function nsx_fixSlashes(&$value){ while (strpos($value, '\\\\')!==false) $value = str_replace('\\\\','\\',$value);
@@ -15,131 +15,59 @@ if (!function_exists('nsx_doDecode')){ function nsx_doDecode($string,$key='NSX')
   foreach($sX as $ss){$j=0; $sA=str_split($ss, 2); foreach($sA as $oS){$oS=hexdec(base_convert(strrev($oS),36,16)); if ($j==$keyLen) $j=0; $oK=ord(substr($key,$j,1)); $j++; $hash.=chr($oS-$oK);}} return $hash;
 }}
 
-//## Authenticated encryption for credentials stored in WordPress options.
+//## Authenticated encryption and migration helpers for stored credentials.
 if (!function_exists('nxs_crypto_key')) { function nxs_crypto_key() {
   $material = function_exists('wp_salt') ? wp_salt('auth') : '';
-  foreach (array('AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY') as $constant) if (defined($constant)) $material .= constant($constant);
+  foreach (array('AUTH_KEY','SECURE_AUTH_KEY','LOGGED_IN_KEY','NONCE_KEY') as $constant) if (defined($constant)) $material .= constant($constant);
   if ($material === '') $material = __FILE__.php_uname();
   return hash('sha256', 'nxs-snap-credentials|'.$material, true);
 }}
 if (!function_exists('nxs_b64url_encode')) { function nxs_b64url_encode($value) { return rtrim(strtr(base64_encode($value), '+/', '-_'), '='); }}
-if (!function_exists('nxs_b64url_decode')) { function nxs_b64url_decode($value) { $value = strtr($value, '-_', '+/'); return base64_decode($value.str_repeat('=', (4 - strlen($value) % 4) % 4), true); }}
+if (!function_exists('nxs_b64url_decode')) { function nxs_b64url_decode($value) { $value = strtr($value, '-_', '+/'); return base64_decode($value.str_repeat('=', (4-strlen($value)%4)%4), true); }}
 if (!function_exists('nxs_secure_encrypt')) { function nxs_secure_encrypt($value) {
-  if (!is_string($value) || $value === '') return $value;
-  $key = nxs_crypto_key();
-  if (function_exists('sodium_crypto_secretbox')) {
-    $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
-    return 'nxse1:s:'.nxs_b64url_encode($nonce.sodium_crypto_secretbox($value, $nonce, $key));
-  }
-  if (function_exists('openssl_encrypt')) {
-    $nonce = random_bytes(12); $tag = '';
-    $ciphertext = openssl_encrypt($value, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $nonce, $tag, '', 16);
-    if ($ciphertext !== false) return 'nxse1:o:'.nxs_b64url_encode($nonce.$tag.$ciphertext);
-  }
-  // Encrypt-then-MAC fallback for hosts without Sodium/OpenSSL.
-  $nonce = random_bytes(16); $stream = ''; $counter = 0;
-  while (strlen($stream) < strlen($value)) $stream .= hash_hmac('sha256', $nonce.pack('N', $counter++), $key, true);
-  $ciphertext = $value ^ substr($stream, 0, strlen($value)); $tag = hash_hmac('sha256', $nonce.$ciphertext, $key, true);
-  return 'nxse1:h:'.nxs_b64url_encode($nonce.$tag.$ciphertext);
+  if (!is_string($value) || $value === '' || strpos($value, 'nxse1:') === 0) return $value; $key = nxs_crypto_key();
+  if (function_exists('sodium_crypto_secretbox')) { $nonce=random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES); return 'nxse1:s:'.nxs_b64url_encode($nonce.sodium_crypto_secretbox($value,$nonce,$key)); }
+  if (function_exists('openssl_encrypt')) { $nonce=random_bytes(12); $tag=''; $ciphertext=openssl_encrypt($value,'aes-256-gcm',$key,OPENSSL_RAW_DATA,$nonce,$tag,'',16); if ($ciphertext!==false) return 'nxse1:o:'.nxs_b64url_encode($nonce.$tag.$ciphertext); }
+  $nonce=random_bytes(16); $stream=''; $counter=0; while(strlen($stream)<strlen($value)) $stream.=hash_hmac('sha256',$nonce.pack('N',$counter++),$key,true);
+  $ciphertext=$value ^ substr($stream,0,strlen($value)); $tag=hash_hmac('sha256',$nonce.$ciphertext,$key,true); return 'nxse1:h:'.nxs_b64url_encode($nonce.$tag.$ciphertext);
 }}
 if (!function_exists('nxs_secure_decrypt')) { function nxs_secure_decrypt($value) {
-  if (!is_string($value) || strpos($value, 'nxse1:') !== 0) return $value;
-  $parts = explode(':', $value, 3); if (count($parts) !== 3) return '';
-  $raw = nxs_b64url_decode($parts[2]); if ($raw === false) return '';
-  $key = nxs_crypto_key();
-  if ($parts[1] === 's' && function_exists('sodium_crypto_secretbox_open') && strlen($raw) > SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
-    $nonce = substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES); $plain = sodium_crypto_secretbox_open(substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), $nonce, $key);
-    return $plain === false ? '' : $plain;
-  }
-  if ($parts[1] === 'o' && function_exists('openssl_decrypt') && strlen($raw) > 28) {
-    $plain = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16));
-    return $plain === false ? '' : $plain;
-  }
-  if ($parts[1] === 'h' && strlen($raw) > 48) {
-    $nonce = substr($raw, 0, 16); $tag = substr($raw, 16, 32); $ciphertext = substr($raw, 48);
-    if (!hash_equals($tag, hash_hmac('sha256', $nonce.$ciphertext, $key, true))) return '';
-    $stream = ''; $counter = 0; while (strlen($stream) < strlen($ciphertext)) $stream .= hash_hmac('sha256', $nonce.pack('N', $counter++), $key, true);
-    return $ciphertext ^ substr($stream, 0, strlen($ciphertext));
-  }
+  if (!is_string($value) || strpos($value,'nxse1:')!==0) return $value; $parts=explode(':',$value,3); if(count($parts)!==3)return ''; $raw=nxs_b64url_decode($parts[2]); if($raw===false)return ''; $key=nxs_crypto_key();
+  if($parts[1]==='s'&&function_exists('sodium_crypto_secretbox_open')&&strlen($raw)>SODIUM_CRYPTO_SECRETBOX_NONCEBYTES){$nonce=substr($raw,0,SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);$plain=sodium_crypto_secretbox_open(substr($raw,SODIUM_CRYPTO_SECRETBOX_NONCEBYTES),$nonce,$key);return $plain===false?'':$plain;}
+  if($parts[1]==='o'&&function_exists('openssl_decrypt')&&strlen($raw)>28){$plain=openssl_decrypt(substr($raw,28),'aes-256-gcm',$key,OPENSSL_RAW_DATA,substr($raw,0,12),substr($raw,12,16));return $plain===false?'':$plain;}
+  if($parts[1]==='h'&&strlen($raw)>48){$nonce=substr($raw,0,16);$tag=substr($raw,16,32);$ciphertext=substr($raw,48);if(!hash_equals($tag,hash_hmac('sha256',$nonce.$ciphertext,$key,true)))return '';$stream='';$counter=0;while(strlen($stream)<strlen($ciphertext))$stream.=hash_hmac('sha256',$nonce.pack('N',$counter++),$key,true);return $ciphertext ^ substr($stream,0,strlen($ciphertext));}
   return '';
 }}
-if (!function_exists('nxs_is_sensitive_setting')) { function nxs_is_sensitive_setting($key) {
-  return (bool) preg_match('/(?:pass|password|secret|token|api[_-]?key|appkey|appsec|cookie|session|oauthverifier|privatekey|authresp|authdata|credential|bearer|^ck$|svc$|^up$|^xs$|^sid$|^ssid$|^hsid$)/i', (string) $key);
-}}
+if (!function_exists('nxs_is_sensitive_setting')) { function nxs_is_sensitive_setting($key) { return (bool)preg_match('/(?:pass|password|secret|token|jwt|api[_-]?key|appkey|appsec|cookie|session|oauthverifier|privatekey|authresp|authdata|credential|bearer|^ck$|svc$|^up$|^xs$|^sid$|^ssid$|^hsid$)/i',(string)$key); }}
 if (!function_exists('nxs_redact_sensitive_data')) { function nxs_redact_sensitive_data($value) {
-  if (is_array($value)) { $out = array(); foreach ($value as $k=>$v) $out[$k] = nxs_is_sensitive_setting($k) ? '[REDACTED]' : nxs_redact_sensitive_data($v); return $out; }
-  if (!is_string($value)) return $value;
-  $value = preg_replace('/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/i', 'Bearer [REDACTED]', $value);
-  return preg_replace('/((?:access[_-]?token|oauth[_-]?(?:token|verifier)|client[_-]?secret|app(?:lication)?[_-]?secret|api[_-]?key|password|passwd|authorization|set-cookie|cookie)\s*(?:=>|=|:|&quot;\s*:\s*&quot;)\s*)[^\s,;&<>\]\)]+/i', '$1[REDACTED]', $value);
+  if(is_array($value)){ $out=array(); foreach($value as $k=>$v)$out[$k]=nxs_is_sensitive_setting($k)?'[REDACTED]':nxs_redact_sensitive_data($v); return $out; }
+  if(is_object($value)) return '[OBJECT '.get_class($value).']';
+  if(!is_string($value))return $value; $value=preg_replace('/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/i','Bearer [REDACTED]',$value);
+  return preg_replace('/((?:access[_-]?token|oauth[_-]?(?:token|verifier)|client[_-]?secret|app(?:lication)?[_-]?secret|api[_-]?key|password|passwd|authorization|set-cookie|cookie)\s*(?:=>|=|:|&quot;\s*:\s*&quot;)\s*)[^\s,;&<>\]\)]+/i','$1[REDACTED]',$value);
 }}
-if (!function_exists('nxs_protect_settings')) { function nxs_protect_settings($value, $key='') {
-  if (is_array($value)) { $out = array(); foreach ($value as $k=>$v) $out[$k] = nxs_protect_settings($v, $k); return $out; }
-  if (nxs_is_sensitive_setting($key) && is_scalar($value) && (string)$value !== '') return nxs_secure_encrypt((string)$value);
-  return $value;
-}}
-if (!function_exists('nxs_settings_need_protection')) { function nxs_settings_need_protection($value, $key='') {
-  if (is_array($value)) { foreach ($value as $k=>$v) if (nxs_settings_need_protection($v, $k)) return true; return false; }
-  return nxs_is_sensitive_setting($key) && is_scalar($value) && (string)$value !== '' && strpos((string)$value, 'nxse1:') !== 0;
-}}
-if (!function_exists('nxs_unprotect_settings')) { function nxs_unprotect_settings($value) {
-  if (is_array($value)) { $out = array(); foreach ($value as $k=>$v) $out[$k] = nxs_unprotect_settings($v); return $out; }
-  return is_string($value) ? nxs_secure_decrypt($value) : $value;
-}}
+if (!function_exists('nxs_protect_settings')) { function nxs_protect_settings($value,$key='') { if(is_array($value)){ $out=array(); foreach($value as $k=>$v)$out[$k]=nxs_protect_settings($v,$k); return $out; } if(nxs_is_sensitive_setting($key)&&is_scalar($value)&&(string)$value!=='')return nxs_secure_encrypt((string)$value); return $value; }}
+if (!function_exists('nxs_settings_need_protection')) { function nxs_settings_need_protection($value,$key='') { if(is_array($value)){foreach($value as $k=>$v)if(nxs_settings_need_protection($v,$k))return true;return false;}return nxs_is_sensitive_setting($key)&&is_scalar($value)&&(string)$value!==''&&strpos((string)$value,'nxse1:')!==0; }}
+if (!function_exists('nxs_unprotect_settings')) { function nxs_unprotect_settings($value) { if(is_array($value)){ $out=array(); foreach($value as $k=>$v)$out[$k]=nxs_unprotect_settings($v); return $out; } return is_string($value)?nxs_secure_decrypt($value):$value; }}
 
-//## Never instantiate PHP objects while decoding plugin-controlled metadata or remote data.
-if (!function_exists('nxs_contains_object')) { function nxs_contains_object($value) { if (is_object($value)) return true; if (is_array($value)) foreach ($value as $item) if (nxs_contains_object($item)) return true; return false; }}
-if (!function_exists('nxs_safe_unserialize')) { function nxs_safe_unserialize($value, $default=array()) {
-  if (!is_string($value) || !function_exists('is_serialized') || !is_serialized($value)) return nxs_contains_object($value) ? $default : $value;
-  $decoded = @unserialize($value, array('allowed_classes'=>false));
-  if ($decoded === false && $value !== 'b:0;') return $default;
-  return nxs_contains_object($decoded) ? $default : $decoded;
-}}
-if (!function_exists('nxs_get_safe_post_meta')) { function nxs_get_safe_post_meta($object_id, $meta_key, $single=true) {
-  global $wpdb; $rows = $wpdb->get_results($wpdb->prepare("SELECT meta_id, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s ORDER BY meta_id ASC", (int)$object_id, $meta_key), ARRAY_A);
-  $values = array(); foreach ($rows as $row) {
-    $decoded = nxs_safe_unserialize($row['meta_value'], array());
-    if (is_array($decoded) && nxs_settings_need_protection($decoded)) $wpdb->update($wpdb->postmeta, array('meta_value'=>maybe_serialize(nxs_protect_settings($decoded))), array('meta_id'=>(int)$row['meta_id']), array('%s'), array('%d'));
-    $values[] = nxs_unprotect_settings($decoded);
-  }
-  return $single ? (isset($values[0]) ? $values[0] : '') : $values;
-}}
-if (!function_exists('nxs_safe_post_metadata')) { function nxs_safe_post_metadata($value, $object_id, $meta_key, $single, $meta_type='post') {
-  if ($meta_type !== 'post' || !preg_match('/^(?:snap|_snap|nxs_|_nxs_)/i', (string)$meta_key)) return $value;
-  $decoded = nxs_get_safe_post_meta($object_id, $meta_key, $single);
-  // get_metadata_raw() unwraps the first element of filter-returned arrays for
-  // single values, so wrap the decoded value once here.
-  return $single ? array($decoded) : $decoded;
-}}
+//## Never instantiate PHP objects while decoding plugin-controlled data.
+if (!function_exists('nxs_contains_object')) { function nxs_contains_object($value){if(is_object($value))return true;if(is_array($value))foreach($value as $item)if(nxs_contains_object($item))return true;return false;}}
+if (!function_exists('nxs_safe_unserialize')) { function nxs_safe_unserialize($value,$default=array()){if(!is_string($value)||!function_exists('is_serialized')||!is_serialized($value))return nxs_contains_object($value)?$default:$value;$decoded=@unserialize($value,array('allowed_classes'=>false));if($decoded===false&&$value!=='b:0;')return $default;return nxs_contains_object($decoded)?$default:$decoded;}}
+if (!function_exists('nxs_get_safe_post_meta')) { function nxs_get_safe_post_meta($object_id,$meta_key,$single=true){global $wpdb;$rows=$wpdb->get_results($wpdb->prepare("SELECT meta_id, meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s ORDER BY meta_id ASC",(int)$object_id,$meta_key),ARRAY_A);$values=array();foreach($rows as $row){$decoded=nxs_safe_unserialize($row['meta_value'],array());if(is_array($decoded)&&nxs_settings_need_protection($decoded))$wpdb->update($wpdb->postmeta,array('meta_value'=>maybe_serialize(nxs_protect_settings($decoded))),array('meta_id'=>(int)$row['meta_id']),array('%s'),array('%d'));$values[]=nxs_unprotect_settings($decoded);}return $single?(isset($values[0])?$values[0]:''):$values;}}
+if (!function_exists('nxs_safe_post_metadata')) { function nxs_safe_post_metadata($value,$object_id,$meta_key,$single,$meta_type='post'){if($meta_type!=='post'||!preg_match('/^(?:snap|_snap|nxs_|_nxs_)/i',(string)$meta_key))return $value;$decoded=nxs_get_safe_post_meta($object_id,$meta_key,$single);return $single?array($decoded):$decoded;}}
 
-if (!function_exists('nxs_snap_user_can_access')) { function nxs_snap_user_can_access($admin_only=false) {
-  return is_user_logged_in() && ($admin_only ? current_user_can('manage_options') : (current_user_can('manage_options') || current_user_can('haveown_snap_accss')));
-}}
-
-//## OAuth states are random, user-bound, provider-bound, short-lived and single-use.
-if (!function_exists('nxs_oauth_state_create')) { function nxs_oauth_state_create($provider, $account) {
-  $provider = sanitize_key($provider); $account = (string) absint($account); $uid = get_current_user_id(); if (!$uid || !$provider) return '';
-  $state = 'nxs-'.$provider.'-'.nxs_b64url_encode(random_bytes(32)); $key = 'nxs_oauth_'.$uid.'_'.$provider; $states = get_transient($key); if (!is_array($states)) $states = array();
-  $now = time(); foreach ($states as $hash=>$entry) if (empty($entry['expires']) || $entry['expires'] < $now) unset($states[$hash]);
-  $states[hash('sha256', $state)] = array('account'=>$account, 'expires'=>$now+600); set_transient($key, $states, 600); return $state;
-}}
-if (!function_exists('nxs_oauth_state_validate')) { function nxs_oauth_state_validate($state, $provider, &$account=null) {
-  $provider = sanitize_key($provider); $uid = get_current_user_id(); if (!$uid || !is_string($state) || strpos($state, 'nxs-'.$provider.'-') !== 0) return false;
-  $key = 'nxs_oauth_'.$uid.'_'.$provider; $states = get_transient($key); $hash = hash('sha256', $state);
-  if (!is_array($states) || empty($states[$hash]) || $states[$hash]['expires'] < time()) return false;
-  $account = $states[$hash]['account']; unset($states[$hash]); if ($states) set_transient($key, $states, 600); else delete_transient($key); return true;
-}}
-
-if (!function_exists('nxs_validate_remote_url')) { function nxs_validate_remote_url($url) {
-  if (!is_string($url) || strtolower((string)wp_parse_url($url, PHP_URL_SCHEME)) !== 'https') return false;
-  return (bool) wp_http_validate_url($url);
-}}
+if (!function_exists('nxs_snap_user_can_access')) { function nxs_snap_user_can_access($admin_only=false){return is_user_logged_in()&&($admin_only?current_user_can('manage_options'):(current_user_can('manage_options')||current_user_can('haveown_snap_accss')));}}
+if (!function_exists('nxs_can_manage_qp')) { function nxs_can_manage_qp($post_id,$delete=false){$post=get_post(absint($post_id));if(!$post||$post->post_type!=='nxs_qp'||!nxs_snap_user_can_access())return false;return current_user_can('manage_options')||(int)$post->post_author===get_current_user_id();}}
+if (!function_exists('nxs_oauth_state_create')) { function nxs_oauth_state_create($provider,$account){$provider=sanitize_key($provider);$account=(string)absint($account);$uid=get_current_user_id();if(!$uid||!$provider)return '';$state='nxs-'.$provider.'-'.nxs_b64url_encode(random_bytes(32));$key='nxs_oauth_'.$uid.'_'.$provider;$states=get_transient($key);if(!is_array($states))$states=array();$now=time();foreach($states as $hash=>$entry)if(empty($entry['expires'])||$entry['expires']<$now)unset($states[$hash]);$states[hash('sha256',$state)]=array('account'=>$account,'expires'=>$now+600);set_transient($key,$states,600);return $state;}}
+if (!function_exists('nxs_oauth_state_validate')) { function nxs_oauth_state_validate($state,$provider,&$account=null){$provider=sanitize_key($provider);$uid=get_current_user_id();if(!$uid||!is_string($state)||strpos($state,'nxs-'.$provider.'-')!==0)return false;$key='nxs_oauth_'.$uid.'_'.$provider;$states=get_transient($key);$hash=hash('sha256',$state);if(!is_array($states)||empty($states[$hash])||$states[$hash]['expires']<time())return false;$account=$states[$hash]['account'];unset($states[$hash]);if($states)set_transient($key,$states,600);else delete_transient($key);return true;}}
+if (!function_exists('nxs_validate_remote_url')) { function nxs_validate_remote_url($url,$require_https=true){if(!is_string($url)||($require_https&&strtolower((string)wp_parse_url($url,PHP_URL_SCHEME))!=='https'))return false;return(bool)wp_http_validate_url($url);}}
 if (!function_exists('nxs_decodeEntitiesFull')){ function nxs_decodeEntitiesFull($string, $quotes = ENT_COMPAT, $charset = 'utf-8') {
   return html_entity_decode(preg_replace_callback('/&([a-zA-Z][a-zA-Z0-9]+);/', 'nxs_convertEntity', $string), $quotes, $charset); 
 }}
 if (!function_exists('nxs_substr')){ function nxs_substr($str, $start){ preg_match_all("/./su", $str, $ar);
    if(func_num_args() >= 3) { $end = func_get_arg(2); return join("",array_slice($ar[0],$start,$end)); } else return join("",array_slice($ar[0],$start));
 }}
-if (!function_exists('nxs_strLen')){ function nxs_strLen($str) { return count(str_split(utf8_decode($str))); }}
+if (!function_exists('nxs_strLen')){ function nxs_strLen($str) { return function_exists('mb_strlen') ? mb_strlen($str, 'UTF-8') : strlen($str); }}
+if (!function_exists('nxs_network_asset_url')) { function nxs_network_asset_url($code, $background=false) { $code=sanitize_key($code); $file=$code.($background?'-bg':'16').(in_array($code,array('th','bs'),true)?'.svg':'.png'); return NXS_PLURL.'img/'.$file; }}
 if (!function_exists('nxs_convertEntity')){ function nxs_convertEntity($matches, $destroy = true) {
   static $table = array('quot' => '&#34;','amp' => '&#38;','lt' => '&#60;','gt' => '&#62;','apos' => '&#39;','OElig' => '&#338;','oelig' => '&#339;','Scaron' => '&#352;','scaron' => '&#353;','Yuml' => '&#376;','circ' => '&#710;','tilde' => '&#732;','ensp' => '&#8194;','emsp' => '&#8195;','thinsp' => '&#8201;','zwnj' => '&#8204;','zwj' => '&#8205;','lrm' => '&#8206;','rlm' => '&#8207;','ndash' => '&#8211;','mdash' => '&#8212;','lsquo' => '&#8216;','rsquo' => '&#8217;','sbquo' => '&#8218;','ldquo' => '&#8220;','rdquo' => '&#8221;','bdquo' => '&#8222;','dagger' => '&#8224;','Dagger' => '&#8225;','permil' => '&#8240;','lsaquo' => '&#8249;','rsaquo' => '&#8250;','euro' => '&#8364;','fnof' => '&#402;','Alpha' => '&#913;','Beta' => '&#914;','Gamma' => '&#915;','Delta' => '&#916;','Epsilon' => '&#917;','Zeta' => '&#918;','Eta' => '&#919;','Theta' => '&#920;','Iota' => '&#921;','Kappa' => '&#922;','Lambda' => '&#923;','Mu' => '&#924;','Nu' => '&#925;','Xi' => '&#926;','Omicron' => '&#927;','Pi' => '&#928;','Rho' => '&#929;','Sigma' => '&#931;','Tau' => '&#932;','Upsilon' => '&#933;','Phi' => '&#934;','Chi' => '&#935;','Psi' => '&#936;','Omega' => '&#937;','alpha' => '&#945;','beta' => '&#946;','gamma' => '&#947;','delta' => '&#948;','epsilon' => '&#949;','zeta' => '&#950;','eta' => '&#951;','theta' => '&#952;','iota' => '&#953;','kappa' => '&#954;','lambda' => '&#955;','mu' => '&#956;','nu' => '&#957;','xi' => '&#958;','omicron' => '&#959;','pi' => '&#960;','rho' => '&#961;','sigmaf' => '&#962;','sigma' => '&#963;','tau' => '&#964;','upsilon' => '&#965;','phi' => '&#966;','chi' => '&#967;','psi' => '&#968;','omega' => '&#969;','thetasym' => '&#977;','upsih' => '&#978;','piv' => '&#982;','bull' => '&#8226;','hellip' => '&#8230;','prime' => '&#8242;','Prime' => '&#8243;','oline' => '&#8254;','frasl' => '&#8260;','weierp' => '&#8472;','image' => '&#8465;','real' => '&#8476;','trade' => '&#8482;','alefsym' => '&#8501;','larr' => '&#8592;','uarr' => '&#8593;','rarr' => '&#8594;','darr' => '&#8595;','harr' => '&#8596;','crarr' => '&#8629;','lArr' => '&#8656;','uArr' => '&#8657;','rArr' => '&#8658;','dArr' => '&#8659;','hArr' => '&#8660;','forall' => '&#8704;','part' => '&#8706;','exist' => '&#8707;','empty' => '&#8709;','nabla' => '&#8711;','isin' => '&#8712;','notin' => '&#8713;','ni' => '&#8715;','prod' => '&#8719;','sum' => '&#8721;','minus' => '&#8722;','lowast' => '&#8727;','radic' => '&#8730;','prop' => '&#8733;','infin' => '&#8734;','ang' => '&#8736;','and' => '&#8743;','or' => '&#8744;','cap' => '&#8745;','cup' => '&#8746;','int' => '&#8747;','there4' => '&#8756;','sim' => '&#8764;','cong' => '&#8773;','asymp' => '&#8776;','ne' => '&#8800;','equiv' => '&#8801;','le' => '&#8804;','ge' => '&#8805;','sub' => '&#8834;','sup' => '&#8835;','nsub' => '&#8836;','sube' => '&#8838;','supe' => '&#8839;','oplus' => '&#8853;','otimes' => '&#8855;','perp' => '&#8869;','sdot' => '&#8901;','lceil' => '&#8968;','rceil' => '&#8969;','lfloor' => '&#8970;','rfloor' => '&#8971;','lang' => '&#9001;','rang' => '&#9002;','loz' => '&#9674;','spades' => '&#9824;','clubs' => '&#9827;','hearts' => '&#9829;','diams' => '&#9830;','nbsp' => '&#160;','iexcl' => '&#161;','cent' => '&#162;','pound' => '&#163;','curren' => '&#164;','yen' => '&#165;','brvbar' => '&#166;','sect' => '&#167;','uml' => '&#168;','copy' => '&#169;','ordf' => '&#170;','laquo' => '&#171;','not' => '&#172;','shy' => '&#173;','reg' => '&#174;','macr' => '&#175;','deg' => '&#176;','plusmn' => '&#177;','sup2' => '&#178;','sup3' => '&#179;','acute' => '&#180;','micro' => '&#181;','para' => '&#182;','middot' => '&#183;','cedil' => '&#184;','sup1' => '&#185;','ordm' => '&#186;','raquo' => '&#187;','frac14' => '&#188;','frac12' => '&#189;','frac34' => '&#190;','iquest' => '&#191;','Agrave' => '&#192;','Aacute' => '&#193;','Acirc' => '&#194;','Atilde' => '&#195;','Auml' => '&#196;','Aring' => '&#197;','AElig' => '&#198;','Ccedil' => '&#199;','Egrave' => '&#200;','Eacute' => '&#201;','Ecirc' => '&#202;','Euml' => '&#203;','Igrave' => '&#204;','Iacute' => '&#205;','Icirc' => '&#206;','Iuml' => '&#207;','ETH' => '&#208;','Ntilde' => '&#209;','Ograve' => '&#210;','Oacute' => '&#211;','Ocirc' => '&#212;','Otilde' => '&#213;','Ouml' => '&#214;','times' => '&#215;','Oslash' => '&#216;','Ugrave' => '&#217;','Uacute' => '&#218;','Ucirc' => '&#219;','Uuml' => '&#220;','Yacute' => '&#221;','THORN' => '&#222;','szlig' => '&#223;','agrave' => '&#224;','aacute' => '&#225;','acirc' => '&#226;','atilde' => '&#227;','auml' => '&#228;','aring' => '&#229;','aelig' => '&#230;','ccedil' => '&#231;','egrave' => '&#232;','eacute' => '&#233;','ecirc' => '&#234;','euml' => '&#235;','igrave' => '&#236;','iacute' => '&#237;','icirc' => '&#238;','iuml' => '&#239;','eth' => '&#240;','ntilde' => '&#241;','ograve' => '&#242;','oacute' => '&#243;','ocirc' => '&#244;','otilde' => '&#245;','ouml' => '&#246;','divide' => '&#247;','oslash' => '&#248;','ugrave' => '&#249;','uacute' => '&#250;','ucirc' => '&#251;','uuml' => '&#252;','yacute' => '&#253;','thorn' => '&#254;','yuml' => '&#255;');
   if (isset($table[$matches[1]])) return $table[$matches[1]];
@@ -182,13 +110,12 @@ if (!function_exists('nxs_MergeCookieArr')){function nxs_MergeCookieArr($ArrO, $
 
 //## Upload image as file from URL to remote server
 if (!function_exists('nxs_curlUploadImg')){ function nxs_curlUploadImg($imgURL, $uplURL, $pstArray, $pstField, $ck='') { $remImgURL = urldecode($imgURL); $urlParced = pathinfo($remImgURL); $remImgURLFilename = $urlParced['basename']; 
-  if (!nxs_validate_remote_url($remImgURL) || !nxs_validate_remote_url($uplURL)) return array('err'=>'Only safe public HTTPS image and upload URLs are allowed.');
   $imgType = substr(  $remImgURL, strrpos( $remImgURL , '.' )+1 ); if (stripos($imgType,'?')!==false) { $itt = explode('?', $imgType); $imgType = @reset($itt); }
   $ia = array("jpg", "png", "gif", "jpeg"); if (!in_array($imgType, $ia)) $imgType = 'jpg';
   $hdrsArr = array('User-Agent'=>'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36', 'Referer'=>$remImgURL); 
-  $advSet = nxs_mkRemOptsArr($hdrsArr); $advSet['limit_response_size'] = 10485760; $advSet['redirection'] = 2; $imgData = nxs_remote_get($remImgURL, $advSet);// prr($remImgURL);  // prr($imgData);
+  $advSet = nxs_mkRemOptsArr($hdrsArr);  $imgData = nxs_remote_get($remImgURL, $advSet);// prr($remImgURL);  // prr($imgData);
   if(is_nxs_error($imgData) || empty($imgData['body']) || (!empty($imgData['headers']['content-length']) && (int)$imgData['headers']['content-length']<200) || 
-    empty($imgData['headers']['content-type']) || strpos(strtolower($imgData['headers']['content-type']), 'image/') !== 0 ||  $imgData['response']['code'] == '403' || strlen($imgData['body']) > 10485760 ) return array('err'=>'The remote image response was rejected.'); else $imgData = $imgData['body'];  
+    $imgData['headers']['content-type'] == 'text/html' ||  $imgData['response']['code'] == '403' ) return array('err'=>print_r($imgData, true)); else $imgData = $imgData['body'];  
   $tmpX=array_search('uri', @array_flip(stream_get_meta_data($GLOBALS[mt_rand()]=tmpfile()))); 
   if (!is_writable($tmpX)) { $msg = "Can't upload image. Your temporary folder or file (file - ".$tmpX.") is not writable.";
     if (function_exists('wp_upload_dir')) { $uDir = wp_upload_dir(); $tmpX = tempnam($uDir['path'], "nx"); if (!is_writable($tmpX)) return $msg." Your UPLOADS folder or file (file - ".$tmpX.") is not writable. ";} else return $msg;
@@ -293,15 +220,16 @@ function nxs_cURLTestCode($url){
 function nxs_cURLTest($url, $msg, $testText){ if ($testText=='getMyIP') echo 'Getting IP... <br/>'; else echo "<br/>--== Test Requested ... ".esc_url($url)."<br/>";
     $rq = new nxsHttp;  $ret = $rq->request($url, nxs_mkRmReqArgs()); $response = is_array($ret)?$ret['body']:'';
     if ($testText=='getMyIP')  echo "Your Server IP:".wp_kses($response, wp_kses_allowed_html( 'post' )).'<br/>';  else { echo "Testing ... ".esc_url($url)." - <br/>";
-        if (stripos($response, $testText)!==false) echo "....".wp_kses($msg, wp_kses_allowed_html( 'post' ))." - OK<br/>"; else { echo "....<b style='color:red;'>".esc_html($msg)." - Problem</b><br/>"; echo nxs_cURLTestCode(esc_url($url));  }
+        if (stripos($response, $testText)!==false) echo "....".wp_kses($msg, wp_kses_allowed_html( 'post' ))." - OK<br/>"; else { echo "....<b style='color:red;'>".$msg." - Problem</b><br/>"; prr($ret); echo nxs_cURLTestCode(esc_url($url));  }
     }
 }
 //## Get Client IP
 if (!function_exists("nxs_getClientIP")){ function nxs_getClientIP($loc=false) {
     if (isset($_SERVER['HTTP_CLIENT_IP'])) $ip['ip'] = $_SERVER['HTTP_CLIENT_IP']; else if(isset($_SERVER['REMOTE_ADDR'])) $ip['ip'] = $_SERVER['REMOTE_ADDR']; else $ip['ip'] = 'UNKNOWN';
+    $ip['ip'] = filter_var($ip['ip'], FILTER_VALIDATE_IP) ? $ip['ip'] : 'UNKNOWN';
     if ($loc){
-        $rq = new nxsHttp; $ret = $rq->request('https://ipapi.co/'.rawurlencode($ip['ip']).'/json/', nxs_mkRmReqArgs()); $loc = (!is_nxs_error($ret) && !empty($ret['body'])) ? json_decode($ret['body'], true) : array();
-        $ip['loc'] = is_array($loc) ? array('countryCode'=>(isset($loc['country_code'])?$loc['country_code']:''), 'region'=>(isset($loc['region_code'])?$loc['region_code']:'')) : array();
+        $rq = new nxsHttp; $ret = $rq->request('https://ipapi.co/'.rawurlencode($ip['ip']).'/json/', nxs_mkRmReqArgs()); $locData = (!is_nxs_error($ret) && !empty($ret['body'])) ? json_decode($ret['body'], true) : array();
+        $ip['loc'] = is_array($locData) ? array('countryCode'=>(isset($locData['country_code'])?$locData['country_code']:''), 'region'=>(isset($locData['region_code'])?$locData['region_code']:'')) : array();
     }
     return $ip;
 }}
@@ -441,36 +369,14 @@ class NXS_HtmlFixer { public $dirtyhtml; public $fixedhtml; public $allowed_styl
 }
 
 //## URL Shortener
-if (!function_exists("nxs_mkShortURL")) { function nxs_mkShortURL($url, $postID=''){ $rurl = '';  global $nxs_SNAP;  if (!isset($nxs_SNAP)) return; $options = $nxs_SNAP->nxs_options; if (empty($options['nxsURLShrtnr'])) $options['nxsURLShrtnr'] = 'G'; $exSLinks = array();
+if (!function_exists("nxs_mkShortURL")) { function nxs_mkShortURL($url, $postID=''){ $rurl = '';  global $nxs_SNAP;  if (!isset($nxs_SNAP)) return; $options = $nxs_SNAP->nxs_options; if (empty($options['nxsURLShrtnr']) || !in_array($options['nxsURLShrtnr'], array('O', 'W', 'L', 'B', 'R', 'Y'), true)) $options['nxsURLShrtnr'] = 'O'; $exSLinks = array();
     ///$ar = debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT,3); $ar = print_r($ar, true); nxs_LogIt('W','SURLX','','','SURLX',$ar); echo '<pre>'; echo $ar; echo '</pre>'; nxs_LogIt('W','SURL','','','SURL','NUI');
     $murl =  md5($options['nxsURLShrtnr'].'-'.$url); $exSLinks = get_post_meta( $postID, '_nxs_slinks', true ); if (!empty($exSLinks) && is_array($exSLinks) && !empty($exSLinks[$murl])) return $exSLinks[$murl]; if (!is_array($exSLinks)) $exSLinks = array();
     if ($options['nxsURLShrtnr']=='B' && !empty($options['bitlyAPIToken'])) { $hdrsArr=nxs_getNXSHeaders();  $hdrsArr['Authorization'] = 'Bearer '.$options['bitlyAPIToken'];  $hdrsArr['content-type'] = "application/json";
-      $response  = nxs_remote_post('https://api-ssl.bitly.com/v4/shorten', array('body' => '{"long_url":"'.$url.'"}',  'headers' => $hdrsArr));
+      $response  = nxs_remote_post('https://api-ssl.bitly.com/v4/shorten', array('body' => json_encode(array('long_url' => $url)), 'headers' => $hdrsArr));
       if (is_nxs_error($response)) { nxs_LogIt('E', 'bit.ly', '', '', '-=ERROR=- '.print_r($response, true),'');  return $url; }
       $rtr = json_decode($response['body'],true); if (!empty($rtr['link'])) $rurl = $rtr['link']; else nxs_LogIt('E', '', 'bit.ly','','Error - bit.ly', print_r($rtr, true));
     } //echo "###".$rurl;
-    if ($options['nxsURLShrtnr']=='A' && !empty($options['adflyUname']) && !empty($options['adflyAPIKey'])) {      
-      $response  = nxs_remote_get('http://api.adf.ly/api.php?key='.$options['adflyAPIKey'].'&uid='.$options['adflyUname'].'&advert_type=int&domain='.$options['adflyDomain'].'&url='.urlencode($url), nxs_mkRemOptsArr(''));       
-      if (is_nxs_error($response)) {   nxs_addToLogN('E', 'adf.ly', '', '-=ERROR=- '.print_r($response, true));  return $url; }     
-      if ( $response['body']!='error')  $rurl = $response['body']; else {  nxs_addToLogN('E', 'adf.ly', '', '-=ERROR=- '.print_r($response, true)); return $url; }
-    }
-    if ($options['nxsURLShrtnr']=='C' && trim($options['clkimAPIKey']!='')) {    
-      $response  = nxs_remote_get('http://api.clkim.com/?key='.$options['clkimAPIKey'].'&url='.urlencode($url), nxs_mkRemOptsArr(''));
-      if (is_nxs_error($response)) { nxs_addToLogN('E', 'clk.im', '', '-=ERROR (SYS)=- '.print_r($response, true)); return $url; }  $r = json_decode($response['body'], true); //prr($r); die();
-      if (!is_array($r) || $r['error']!='0') { nxs_addToLogN('E', 'clk.im', '', '-=ERROR (JSON)=- '.print_r($response['body'], true)); return $url; } else $rurl = urldecode($r['short']);      
-    }
-    if ($options['nxsURLShrtnr']=='X' && trim($options['xcoAPIKey']!='')) {    
-      $response  = nxs_remote_get('http://api.x.co/Squeeze.svc/text/'.$options['xcoAPIKey'].'?url='.urlencode($url), nxs_mkRemOptsArr('')); 
-      if (is_nxs_error($response)) { nxs_addToLogN('E', 'x.co', '', '-=ERROR (SYS)=- '.print_r($response, true)); return $url; }  $r = $response['body'];
-      if (empty($r) || stripos($r, 'http://')===false) { nxs_addToLogN('E', 'x.co', '', '-=ERROR (RES)=- '.print_r($r, true)); return $url; } else $rurl = $r;
-    }
-    
-    if ($options['nxsURLShrtnr']=='U') {    
-      $flds = array('a'=>'add', 'url'=>$url); $response  = nxs_remote_post('http://u.to/', array('body' => $flds)); 
-      if (is_nxs_error($response)) { nxs_addToLogN('E', 'u.to', '', '-=ERROR (SYS)=- '.print_r($response, true)); return $url; }  $r = $response['body'];
-      if (empty($r) || stripos($r, "#shurlout').val('")===false) { nxs_addToLogN('E', 'x.co', '', '-=ERROR (RES)=- '.print_r($r, true)); return $url; } else $rurl = CutFromTo($r,"#shurlout').val('","'");
-    }
-
     if ($options['nxsURLShrtnr']=='L') {
         $urlR =   'https://go2ln.com/api/url/add'; $argArr['extraHeaders']['Authorization'] = 'Bearer '.$options['g2lnAPIKey'];
         $argArr['flds'] = ['url'=>$url];
@@ -481,19 +387,16 @@ if (!function_exists("nxs_mkShortURL")) { function nxs_mkShortURL($url, $postID=
         if (!is_array($rtr) || empty($rtr['shorturl']) ) {   nxs_addToLogN('E', 'Go2Ln', '', '-=ERROR=- '.print_r($response, true));  return $url; } $rurl = urldecode($rtr['shorturl']);
     }
 
-    if ($options['nxsURLShrtnr']=='R') { $urlR =   'https://api.rebrandly.com/v1/links/new?destination='.urlencode($url).'&domain[fullName]='.$options['rblyDomain']; 
-      $hdrsArr = array('Content-Type'=>'application/json', 'apikey'=>$options['rblyAPIKey']); $advSet = nxs_mkRemOptsArr($hdrsArr); $response  = nxs_remote_get($urlR, $advSet);
+    if ($options['nxsURLShrtnr']=='R' && !empty($options['rblyAPIKey'])) {
+      $body = array('destination' => $url);
+      if (!empty($options['rblyDomain'])) $body['domain'] = array('fullName' => $options['rblyDomain']);
+      $hdrsArr = array('Content-Type'=>'application/json', 'apikey'=>$options['rblyAPIKey']);
+      $response = nxs_remote_post('https://api.rebrandly.com/v1/links', array('body' => json_encode($body), 'headers' => $hdrsArr));
       if (is_nxs_error($response)) { nxs_addToLogN('E', 'Rebrandly', '', '-=ERROR (SYS)=- '.print_r($response, true)); return $url; }  $rtr = json_decode($response['body'],true); // prr($rtr);
-      if (!is_array($rtr) || empty($rtr['shortUrl']) ) {   nxs_addToLogN('E', 'rebrandly', '', '-=ERROR=- '.print_r($response, true));  return $url; } $rurl = 'http://'.$rtr['shortUrl'];
-    }
-    
-    if ($options['nxsURLShrtnr']=='P' && trim($options['postAPIKey']!='')) {      
-      $response  = nxs_remote_get('http://po.st/api/shorten?longUrl='.urlencode($url).'&apiKey='.$options['postAPIKey'], nxs_mkRemOptsArr(''));       
-      if (is_nxs_error($response)) { nxs_addToLogN('E', 'po.st', '', '-=ERROR (SYS)=- '.print_r($response, true)); return $url; }  $r = json_decode($response['body'], true); 
-      if (!is_array($r) || $r['status_txt']!='OK') { nxs_addToLogN('E', 'po.st', '', '-=ERROR (JSON)=- '.print_r($response['body'], true)); return $url; } else $rurl = $r['short_url'];
+      if (!is_array($rtr) || empty($rtr['shortUrl']) ) {   nxs_addToLogN('E', 'rebrandly', '', '-=ERROR=- '.print_r($response, true));  return $url; } $rurl = strpos($rtr['shortUrl'], 'http') === 0 ? $rtr['shortUrl'] : 'https://'.$rtr['shortUrl'];
     }
     if ($options['nxsURLShrtnr']=='W' && function_exists('wp_get_shortlink')) { global $post; $post = get_post($postID);  $rurl = wp_get_shortlink($postID, 'post'); }
-    if ($options['nxsURLShrtnr']=='Y' && trim($options['YOURLSKey']!='') && trim($options['YOURLSURL']!='')) { $timestamp = time(); $signature = md5( $timestamp . $options['YOURLSKey'] ); 
+    if ($options['nxsURLShrtnr']=='Y' && !empty($options['YOURLSKey']) && !empty($options['YOURLSURL'])) { $timestamp = time(); $signature = md5( $timestamp . $options['YOURLSKey'] ); 
       $flds = array('signature'=>$signature, 'action' => 'shorturl', 'url'=>$url, 'format'=>'json', 'timestamp'=>$timestamp);  
       $response  = nxs_remote_post(($options['YOURLSURL']), array('body' => $flds)); 
       if (is_nxs_error($response)) {  nxs_addToLogN('E', 'YOURLS', '', '-=ERROR=- '.print_r($response, true)); return $url; } 
@@ -501,8 +404,8 @@ if (!function_exists("nxs_mkShortURL")) { function nxs_mkShortURL($url, $postID=
       $rurl = $rtr['shorturl'];
     
     }   
-    if ($options['nxsURLShrtnr']=='O' || $options['nxsURLShrtnr']=='' || $options['nxsURLShrtnr']=='G') { //IS.GD/V.GD
-      $advSet = nxs_mkRemOptsArr(nxs_makeHeaders()); $response  = nxs_remote_post('https://is.gd/create.php?format=simple&url='.urlencode($url), $advSet); //   nxs_addToLogN('E', 'is.gd', '', '-=URLS=- '.print_r($response['body'], true)); 
+    if ($options['nxsURLShrtnr']=='O') { // is.gd
+      $advSet = nxs_mkRemOptsArr(nxs_makeHeaders()); $response  = nxs_remote_get('https://is.gd/create.php?format=simple&url='.urlencode($url), $advSet);
       if (is_nxs_error($response)) {   nxs_addToLogN('E', 'is.gd', '', '-=ERROR=- '.print_r($response, true));  return $url; } 
       $rtr = $response['body']; if (stripos($rtr, 'Error')!==false)  {   nxs_addToLogN('E', 'is.gd', '', '-=ERROR=- '.print_r($response, true));  return $url; }      
       $rurl = $rtr;

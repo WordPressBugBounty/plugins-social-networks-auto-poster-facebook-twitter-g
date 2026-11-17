@@ -2,81 +2,30 @@
 //## NextScripts Reddit Connection Class
 $nxs_snapAvNts[] = array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit', 'type'=>'Link Sharing/Boormarks', 'ptype'=>'P', 'status'=>'A', 'desc'=>'Autopost to your subreddits');
 
+require_once dirname(__DIR__).'/inc/nxs_official_connectors.php';
+
 if (!class_exists("nxs_snapClassRD")) { class nxs_snapClassRD extends nxs_snapClassNT { 
-  var $ntInfo = array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit', 'defNName'=>'uName', 'tstReq' => false, 'instrURL'=>'https://www.nextscripts.com/setup-installation-reddit-social-networks-auto-poster-wordpress/');    
-  
-  var $noFuncMsg = 'Sorry, but Reddit doesn\'t have a built-in API for automated posts yet. <br/>You need a special API library module to be able to publish your content to Reddit.';  
-  function checkIfFunc() { return class_exists('nxsAPI_RD'); }
-  
-  function toLatestVer($ntOpts){ if( !empty($ntOpts['v'])) $v = $ntOpts['v']; else $v = 340; $ntOptsOut = '';  switch ($v) {
-      case 340: $ntOptsOut = $this->toLatestVerNTGen($ntOpts); $ntOptsOut['do'] = $ntOpts['do'.$this->ntInfo['code']]; $ntOptsOut['nName'] = $ntOpts['nName'];  
-        $ntOptsOut['msgTFormat'] = $ntOpts['rdTitleFormat']; $ntOptsOut['msgFormat'] = $ntOpts['rdTextFormat'];  $ntOptsOut['uName'] = $ntOpts['rdUName'];  $ntOptsOut['uPass'] = $ntOpts['rdPass']; 
-        $ntOptsOut['postType'] = $ntOpts['postType'];  $ntOptsOut['rdSubReddit'] = $ntOpts['rdSubReddit'];  
-        $ntOptsOut['v'] = NXS_SETV;
-      break;
-    }
-    return !empty($ntOptsOut)?$ntOptsOut:$ntOpts; 
-  } 
-  
-  //#### Show Common Settings
-  function showGenNTSettings($ntOpts){ $this->nt = $ntOpts; $this->showNTGroup(); return; }  
-  //#### Show NEW Settings Page
-  function showNewNTSettings($ii){ $defO = array('nName'=>'', 'do'=>'1', 'uName'=>'', 'uPass'=>'', 'postType'=>'', 'rdSubReddit'=>'', 'msgTFormat'=>'%TITLE%', 'msgFormat'=>"%EXCERPT%"); $this->showGNewNTSettings($ii, $defO); }
-  //#### Show Unit  Settings  
-  function checkIfSetupFinished($options) { return !empty($options['uPass']); }
-  function accTab($ii, $options, $isNew=false){ $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; $this->elemUserPass($ii, $options['uName'], $options['uPass']);  $p = $options['uPass'];
-      if (!empty($p)) { $p = (substr($p, 0, 5)=='n5g9a'||substr($p, 0, 5)=='g9c1a'||substr($p, 0, 5)=='b4d7s')?nsx_doDecode(substr($p, 5)):$p; $options['uPass'] = 'g9c1a'.nsx_doEncode($p); $tPST = (!empty($_POST))?$_POST:''; 
-      $_POST['rdSR'] = $options['rdSubReddit']; $_POST['u'] = $options['uName']; $_POST['p'] = $p; $_POST['ii'] = $ii; 
-      $opNm = 'nxs_snap_rd_'.sha1('nxs_snap_rd'.$options['uName'].$options['uPass']); $opVal = nxs_getOption($opNm); if (empty($opVal)) { $ntw[$nt][$ii]=$options; $opVal = $this->getListOfSubReddits($ntw); }
-      if (!empty($opVal) & !is_array($opVal)) $options['uMsg'] = $opVal; else { if (!empty($opVal) & is_array($opVal)) $options = array_merge($options, $opVal); } $_POST = $tPST;
-    } ?>
-    
-    <br/ ><div style="width:100%;"><b><?php _e('Subreddit ID', 'nxs_snap'); ?></b>&nbsp;(<?php _e('Please select Subreddit', 'nxs_snap'); ?>)</div>
-    <div id="nxsRDInfoDiv<?php echo esc_attr($ii); ?>">
-         <div style="width:100%;">
-          <div>                   
-          <select id="rdSubReddit<?php echo esc_attr($ii); ?>" onchange="nxs_rdSRChange('<?php echo esc_attr($ii);?>',jQuery(this));" name="rd[<?php echo esc_attr($ii);?>][rdSubReddit]">
-            <?php $pgi = !empty($options['rdSubRedditsList'])?$options['rdSubRedditsList']:''; 
-              echo (!empty($pgi) && stripos($pgi,$options['rdSubReddit'])===false)?'<option selected="selected" value="'.esc_attr($options['rdSubReddit']).'">'.wp_kses($options['rdSubReddit'], wp_kses_allowed_html( 'post' )).'</option>':'';
-              if (!empty($options['rdSubReddit'])) { $pgi = str_ireplace('selected="selected" ','',$pgi); $pgi = str_ireplace('value="'.$options['rdSubReddit'].'"','selected="selected" value="'.esc_attr($options['rdSubReddit']).'"',$pgi); } 
-                else echo '<option value="">None(Click refresh icon to retrieve your subreddits)</option>';
-              echo $pgi;
-            ?>
-          </select><div id="nxsRDInfoDivBlock<?php echo esc_attr($ii); ?>" style="display: inline-block;"> <input type="text" style="display: none;" id="rdSRIDCst<?php echo esc_attr($ii); ?>" value="<?php echo esc_attr($options['rdSubReddit']); ?>" class="nxs_rdSRIDcst" data-tid="rdSubReddit<?php echo esc_attr($ii); ?>" />         
-          <div style="display: inline-block;"><a onclick="nxs_rdGetSRs(<?php echo esc_attr($ii);?>, 1); jQuery(this).blur(); return false;" href="#"><img id="<?php echo esc_attr($nt.$ii);?>rfrshImg" style="vertical-align: middle;" src='<?php echo NXS_PLURL; ?>img/refresh16.png' /></a></div></div> <img id="<?php echo esc_attr($nt.$ii);?>ldImg" style="display: none;vertical-align: middle;" src='<?php echo NXS_PLURL; ?>img/ajax-loader-sm.gif' />
-          </div>          
-          </div>     
-          <div id="nxsRDMsgDiv<?php echo esc_attr($ii); ?>"><?php if (!empty($options['uMsg'])) echo $options['uMsg']; ?><?php if ($isNew) { ?><?php _e('Please enter your login/password to see the list of your subreddits', 'nxs_snap'); ?><?php } ?></div>                                                 
-    </div><i style="color: #580000;">Please do not try to post to subredits that you do not own. Reddit is very serious about it's policy that prohibits sharing your own links. You will loose posting privileges and you account will be <b>banned</b> if you post to public subreddits. </i>
-            <br/>  <br/>  
-            
-    <div style="width:100%;"><strong id="altFormatText">Post Type:</strong></div>                      
-      <div style="margin-left: 10px;">
-        <input type="radio" name="rd[<?php echo esc_attr($ii); ?>][postType]" value="A" <?php if ( empty($options['postType']) || $options['postType'] == 'A') echo 'checked="checked"'; ?> /> <?php _e('Link Post', 'social-networks-auto-poster-facebook-twitter-g'); ?>
-        <br/>
-        <input type="radio" name="rd[<?php echo esc_attr($ii); ?>][postType]" value="T" <?php if (!empty($options['postType']) && $options['postType'] == 'T') echo 'checked="checked"'; ?> /> <?php _e('Text Post', 'social-networks-auto-poster-facebook-twitter-g'); ?> - <i><?php _e('set the text format below', 'social-networks-auto-poster-facebook-twitter-g'); ?></i>
-     </div>
-  
-  <script type="text/javascript">      
-      jQuery('#apRDUName<?php echo esc_attr($ii); ?>').change(function() { var u = jQuery(this).val();  var p = jQuery('#apRDPass<?php echo esc_attr($ii); ?>').val(); if( u!='' && p!='' ) { nxs_rdGetSRs(<?php echo esc_attr($ii); ?>,0); }  });
-      jQuery('#apRDPass<?php echo esc_attr($ii); ?>').change(function() { var u = jQuery('#apRDUName<?php echo esc_attr($ii); ?>').val();  var p = jQuery(this).val(); if( u!='' && p!='' ) { nxs_rdGetSRs(<?php echo esc_attr($ii); ?>,0); }  });
-  </script>
-  
-    <?php $this->elemTitleFormat($ii,'Post Title Format','msgTFormat',$options['msgTFormat']);
-    $this->elemMsgFormat($ii,'Post Text Format','msgFormat',$options['msgFormat']);?><br/ ><?php
+  var $ntInfo = array('code'=>'RD', 'lcode'=>'rd', 'name'=>'Reddit', 'defNName'=>'', 'tstReq'=>false, 'instrURL'=>'https://www.reddit.com/dev/api/');
+  var $defO = array('nName'=>'', 'do'=>'1', 'appKey'=>'', 'appSec'=>'', 'rdSubReddit'=>'', 'postType'=>'A', 'msgTFormat'=>'%TITLE%', 'msgFormat'=>'%EXCERPT%');
+  function checkIfFunc() { return true; }
+  function toLatestVer($ntOpts) { return $ntOpts; }
+  function showGenNTSettings($ntOpts) { $this->nt=$ntOpts; $this->showNTGroup(); }
+  function showNewNTSettings($ii) { $this->showGNewNTSettings($ii, $this->defO); }
+  function checkIfSetupFinished($options) { return !empty($options['officialApi']) && $options['officialApi']==='rd' && !empty($options['refreshToken']) && !empty($options['rdSubReddit']); }
+  function doAuth() { NXS_Official_Connectors::handle_oauth('rd', $this->nt); }
+  function accTab($ii,$options,$isNew=false) { $options=array_merge($this->defO,(array)$options); ?>
+    <h3>Reddit OAuth API</h3>
+    <?php $this->elemKeySecret($ii,'Client ID','Client Secret',$options['appKey'],$options['appSec'],'appKey','appSec','https://www.reddit.com/prefs/apps/'); ?>
+    <p>Create a Reddit web app and register this redirect URI: <code><?php echo esc_html(NXS_Official_Connectors::callback_url()); ?></code></p>
+    <?php if (!empty($options['appKey']) && !empty($options['appSec']) && !$isNew) { ?><p><a class="button" href="<?php echo esc_url(add_query_arg(array('nxs_official_start'=>'rd','acc'=>$ii),NXS_Official_Connectors::callback_url())); ?>">Connect Reddit</a></p><?php } else { ?><p>Save the Client ID and Client Secret, then connect Reddit.</p><?php } ?>
+    <?php if (!empty($options['refreshToken']) && !empty($options['officialApi']) && $options['officialApi']==='rd') { ?><p>Connected as <?php echo esc_html($options['uName'] ?? 'Reddit user'); ?>.</p><?php } ?>
+    <p><label>Subreddit <input name="rd[<?php echo esc_attr($ii); ?>][rdSubReddit]" value="<?php echo esc_attr($options['rdSubReddit']); ?>" /></label></p>
+    <p><label><input type="radio" name="rd[<?php echo esc_attr($ii); ?>][postType]" value="A" <?php checked($options['postType'],'A'); ?>> Link post</label> <label><input type="radio" name="rd[<?php echo esc_attr($ii); ?>][postType]" value="T" <?php checked($options['postType'],'T'); ?>> Text post</label></p>
+    <?php $this->elemTitleFormat($ii,'Post title','msgTFormat',$options['msgTFormat']); $this->elemMsgFormat($ii,'Post text','msgFormat',$options['msgFormat']);
   }
-  function advTab($ii, $options){ $this->askForSURL( $this->ntInfo['lcode'], $ii, $options);  $this->showProxies($this->ntInfo['lcode'], $ii, $options); }
-  //#### Set Unit Settings from POST
-  function setNTSettings($post, $options){ 
-    foreach ($post as $ii => $pval){       
-      if (!empty($pval['uPass']) && !empty($pval['uPass'])){ if (!isset($options[$ii])) $options[$ii] = array(); $options[$ii] = $this->saveCommonNTSettings($pval,$options[$ii]); 
-        
-        if (isset($pval['rdSubReddit'])) $options[$ii]['rdSubReddit'] = trim($pval['rdSubReddit']); 
-        
-      } elseif ( count($pval)==1 ) if (isset($pval['do'])) $options[$ii]['do'] = $pval['do']; else $options[$ii]['do'] = 0; 
-    } return $options;
-  }
-    
+  function advTab($ii,$options) { }
+  function setNTSettings($post,$options) { foreach ($post as $ii=>$pval) { if (!isset($options[$ii])) $options[$ii]=array(); if (count($pval)===1 && isset($pval['do'])) { $options[$ii]['do']=$pval['do']; continue; } $options[$ii]=$this->saveCommonNTSettings($pval,$options[$ii]); if (isset($pval['rdSubReddit'])) $options[$ii]['rdSubReddit']=preg_replace('/^r\//','',trim($pval['rdSubReddit'])); } return $options; }
+
   //#### Show Post->Edit Meta Box Settings
   function showEdPostNTSettings($ntOpts, $post){ $post_id = $post->ID; $nt = $this->ntInfo['lcode']; $ntU = $this->ntInfo['code'];
       foreach($ntOpts as $ii=>$ntOpt)  { $isFin = $this->checkIfSetupFinished($ntOpt); if (!$isFin) continue; 
@@ -127,19 +76,7 @@ if (!class_exists("nxs_snapClassRD")) { class nxs_snapClassRD extends nxs_snapCl
   function adjPublishWP(&$options, &$message, $postID){ 
       
   } 
-   //## RD Specific
-  function getListOfSubReddits($networks){ $opVal = array(); $pass = 'g9c1a'.nsx_doEncode(sanitize_text_field($_POST['p'])); $opNm = 'nxs_snap_rd_'.sha1('nxs_snap_rd'.sanitize_user(sanitize_text_field($_POST['u'])).$pass);
-     $opVal = nxs_getOption($opNm); $ii = sanitize_key($_POST['ii']); $nt = new nxsAPI_RD();  // prr($opVal);
-     $currPstAs = !empty($_POST['rdSR'])?sanitize_text_field($_POST['rdSR']):(!empty($networks['rd'][$ii])?$networks['rd'][$ii]['rdSubReddit']:'');
-     if (empty($_POST['force']) && !empty($opVal['ck']) && !empty($opVal['rdSubRedditsList']) ) $pgs = $opVal['rdSubRedditsList']; else { if (!empty($opVal['ck'])) $nt->ck = $opVal['ck']; 
-       if (!empty($networks['rd'][$ii]['proxy'])&&!empty($networks['rd'][$ii]['proxyOn'])){ $nt->proxy['proxy'] = $networks['rd'][$ii]['proxy']['proxy']; if (!empty($networks['rd'][$ii]['proxy']['up'])) $nt->proxy['up'] = $networks['rd'][$ii]['proxy']['up']; } $loginError=$nt->connect(sanitize_user($_POST['u']),$_POST['p']);// var_dump($loginError);
-       if (!$loginError){ $opVal['ck'] = $nt->ck; $nt->getSubReddits($currPstAs); $pgs = $nt->srList; }
-         else { $outMsg = '<b style="color:red;">'.__('Login Problem').'&nbsp;-&nbsp;'.$loginError.'</b>'; if (!empty($_POST['isOut'])) echo $outMsg; return $outMsg; }
-     } $pgCust = (!empty($pgs) && !empty($currPstAs) && stripos($pgs,$currPstAs)===false)?'<option selected="selected" value="'.$currPstAs.'">'.$currPstAs.'</option>':'';     
-     if (!empty($_POST['isOut'])) echo $pgCust.$pgs; // .'<option style="color:#BD5200" value="a">'.__('...enter the SubReddit ID').'</option>';
-     $opVal['rdSubRedditsList'] = $pgs; nxs_saveOption($opNm, $opVal); return $opVal;
-  } 
-  
+
 }}
 
 if (!function_exists("nxs_doPublishToRD")) { function nxs_doPublishToRD($postID, $options){ if (!is_array($options)) $options = maybe_unserialize(get_post_meta($postID, $options, true)); 

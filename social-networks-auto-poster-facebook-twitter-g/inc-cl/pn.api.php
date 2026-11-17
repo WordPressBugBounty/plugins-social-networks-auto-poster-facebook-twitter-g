@@ -1,43 +1,24 @@
-<?php    
-//## NextScripts FriendFeed Connection Class
+<?php
+// Official Pinterest API v5 publisher.
+require_once dirname(__DIR__).'/inc/nxs_official_connectors.php';
 $nxs_snapAPINts[] = array('code'=>'PN', 'lcode'=>'pn', 'name'=>'Pinterest');
-
-if (!class_exists("nxs_class_SNAP_PN")) { class nxs_class_SNAP_PN {
-    
-    var $ntCode = 'PN';
-    var $ntLCode = 'pn';     
-    
-    function doPost($options, $message){ if (!is_array($options)) return false; $out = array();
-      foreach ($options as $ii=>$ntOpts) $out[$ii] = $this->doPostToNT($ntOpts, $message);
-      return $out;
-    }    
-    function doPostToNT($options, $message){ global $nxs_gCookiesArr; $badOut = array('pgID'=>'', 'isPosted'=>0, 'pDate'=>date('Y-m-d H:i:s'), 'Error'=>''); //prr($message);
-      if (!class_exists("nxsAPI_PN")){ $badOut['Error'] .= "Pinterest API Library not found"; return $badOut; } 
-      //## Check settings
-      if (!is_array($options)) { $badOut['Error'] = 'No Options'; return $badOut; }      
-      if (!isset($options['uName']) || trim($options['uPass'])=='') { $badOut['Error'] = 'Not Configured'; return $badOut; }            
-      $pass = (substr($options['uPass'], 0, 5)=='n5g9a'||substr($options['uPass'], 0, 5)=='g9c1a'||substr($options['uPass'], 0, 5)=='b4d7s')?nsx_doDecode(substr($options['uPass'], 5)):$options['uPass'];       
-      if (empty($options['imgSize'])) $options['imgSize'] = '';
-      //## Format
-      if (!empty($message['pTitle'])) $msgT = $message['pTitle']; else $msgT = nxs_doFormatMsg($options['msgTFormat'], $message); 
-      if (!empty($message['pText'])) $msg = $message['pText']; else $msg = nxs_doFormatMsg($options['msgFormat'], $message); $boardID = $options['pnBoard'];
-      if (isset($message['imageURL'])) $imgURL = trim(nxs_getImgfrOpt($message['imageURL'], $options['imgSize'])); else $imgURL = ''; if ($imgURL=='') $badOut['Error'] .= 'NO Image.';
-      $urlToGo = (!empty($message['url']))?$message['url']:'';
-            
-      //## Get Saved Login Info
-      if (function_exists('nxs_getOption')) { $opVal = array(); $opNm = 'nxs_snap_pn_'.sha1('nxs_snap_pn'.$options['uName'].$options['uPass']); $opVal = nxs_getOption($opNm); if (!empty($opVal) & is_array($opVal)) $options = array_merge($options, $opVal); } 
-      
-      $nt = new nxsAPI_PN();  if(!empty($options['ck'])) $nt->ck = $options['ck']; if(!empty($options['session'])&& property_exists ('nxsAPI_PN', 'sess')) $nt->sess['sid'] = $options['session'];
-
-      if (!empty($options['proxy'])&&!empty($options['proxyOn'])){ $nt->proxy['proxy'] = $options['proxy']['proxy']; if (!empty($options['proxy']['up'])) $nt->proxy['up'] = $options['proxy']['up'];};
-      $loginErr = $nt->connect($options['uName'], $pass); if ($loginErr) { $badOut['Error'] .= 'Can\'t Connect - '.print_r($loginErr, true); return $badOut; }       
-            
-      if (preg_match ( '/\$(\d+\.\d+)/', $msg, $matches )) $price = $matches[0];  else $price = ''; // prr($imgURL);
-      if (isset($options['cImgURL']) && $options['cImgURL']=='S' ) $urlToGo = nxs_mkShortURL($urlToGo); elseif (isset($options['cImgURL']) && $options['cImgURL']=='N' ) $urlToGo = '';      
-      if (!empty($nt->ck['chkPnt3'])) unset($nt->ck['chkPnt3']);  $ret = $nt->post($msg, $imgURL, $urlToGo, $boardID, $msgT, $price, $urlToGo);
-      //## Save Login Info
-      if (function_exists('nxs_saveOption')) { if (empty($opVal['ck'])) $opVal['ck'] = ''; if (is_array($ret) && $ret['isPosted']=='1' && $opVal['ck'] != $nt->ck) { $opVal['ck'] = $nt->ck; nxs_saveOption($opNm, $opVal); } }      
-      return $ret;
-   }    
+if (!class_exists('nxs_class_SNAP_PN')) { class nxs_class_SNAP_PN {
+    var $ntCode='PN'; var $ntLCode='pn';
+    function doPost($options,$message) { if (!is_array($options)) return false; $out=array(); foreach ($options as $ii=>$account) $out[$ii]=$this->doPostToNT($account,$message); return $out; }
+    function doPostToNT($options,$message) {
+        $error=array('isPosted'=>0,'pDate'=>date('Y-m-d H:i:s'),'Error'=>'');
+        if (!is_array($options) || empty($options['pnBoard'])) { $error['Error']='Pinterest board is not configured.'; return $error; }
+        $token=NXS_Official_Connectors::access_token('pn',$options);
+        if ($token==='') { $error['Error']='Reconnect Pinterest with your own app or Post.Social.'; return $error; }
+        $image=!empty($message['imageURL']) ? trim(nxs_getImgfrOpt($message['imageURL'],!empty($options['imgSize'])?$options['imgSize']:'')) : '';
+        if ($image==='' && !empty($options['defImg'])) $image=trim($options['defImg']);
+        if (!filter_var($image,FILTER_VALIDATE_URL) || strpos($image,'https://')!==0) { $error['Error']='Pinterest requires a public HTTPS image URL.'; return $error; }
+        $title=!empty($message['pTitle'])?$message['pTitle']:nxs_doFormatMsg($options['msgTFormat'] ?? '%TITLE%',$message);
+        $description=!empty($message['pText'])?$message['pText']:nxs_doFormatMsg($options['msgFormat'] ?? '%EXCERPT%',$message);
+        $body=array('board_id'=>(string)$options['pnBoard'],'title'=>nsTrnc(wp_strip_all_tags($title),100),'description'=>nsTrnc(wp_strip_all_tags($description),500),'media_source'=>array('source_type'=>'image_url','url'=>$image,'is_standard'=>true));
+        if (($options['cImgURL'] ?? 'R')!=='N' && !empty($message['url'])) $body['link']=$message['url'];
+        $result=NXS_Official_Connectors::request('https://api.pinterest.com/v5/pins',$token,'POST',$body,'pn');
+        if (empty($result['id']) || (int)($result['http_status'] ?? 0)!==201) { $error['Error']=!empty($result['message'])?$result['message']:'Pinterest did not return a Pin ID.'; return $error; }
+        return array('isPosted'=>1,'postID'=>$result['id'],'postURL'=>'https://www.pinterest.com/pin/'.$result['id'].'/','pDate'=>date('Y-m-d H:i:s'));
+    }
 }}
-?>

@@ -20,17 +20,26 @@ if (!class_exists("nxs_snapClassBG")) { class nxs_snapClassBG extends nxs_snapCl
   //#### Show Common Settings
   function showGenNTSettings($ntOpts){ $this->nt = $ntOpts;  $this->showNTGroup(); }  
   //#### Show NEW Settings Page
-  function showNewNTSettings($ii){ $defO = array('nName'=>'', 'do'=>'1', 'blogID'=>'', 'appKey'=>'', 'appSec'=>'', 'uName'=>'', 'uPass'=>'', 'inclTags'=>1, 'inclCatsAsTags'=>0, 'msgFormat'=>"%RAWTEXT%", 'msgTFormat'=>"%TITLE%", 'imgSize'=>'original'); $this->showGNewNTSettings($ii, $defO); }
+  function showNewNTSettings($ii){ $defO = array('nName'=>'', 'do'=>'1', 'blogID'=>'', 'appKey'=>'', 'appSec'=>'', 'inclTags'=>1, 'inclCatsAsTags'=>0, 'msgFormat'=>"%RAWTEXT%", 'msgTFormat'=>"%TITLE%", 'imgSize'=>'original'); $this->showGNewNTSettings($ii, $defO); }
   //#### Show Unit  Settings  
-  function checkIfSetupFinished($options) { return !empty($options['accessToken']) || !empty($options['uPass']); }
+  function checkIfSetupFinished($options) { return !empty($options['accessToken']); }
   public function doAuth() { $ntInfo = $this->ntInfo; global $nxs_snapSetPgURL;     
     if (isset($_GET['code']) && $_GET['code']!='' && isset($_GET['state']) && strpos(wp_unslash($_GET['state']), 'nxs-bg-') === 0){
       if (!nxs_snap_user_can_access() || !nxs_oauth_state_validate(wp_unslash($_GET['state']), 'bg', $ii) || !isset($this->nt[$ii])) wp_die(esc_html__('Invalid or expired Blogger authorization state.', 'social-networks-auto-poster-facebook-twitter-g'), '', array('response'=>403));
       $at = sanitize_text_field(wp_unslash($_GET['code']));
       echo "----=={ oAuth 2.0 Wordflow }==----<br/>-= This is normal technical authorization info that will dissapear (Unless you get some errors) =- <br/><br/><br/>"; 
-      $nxs_snapSetPgURL = nxs_get_admin_url('admin.php?page=nxssnap'); $options = $this->nt[$ii]; $wprg = array('sslverify'=>true);
+      $nxs_snapSetPgURL = nxs_get_admin_url('admin.php?page=nxssnap');
+      $options = $this->nt[$ii]; $wprg = array('sslverify'=>true);
       if (isset($options['appKey'])){
-        $response = nxs_remote_post('https://oauth2.googleapis.com/token', array('body'=>array('code'=>$at,'redirect_uri'=>$nxs_snapSetPgURL,'client_id'=>nxs_gak($options['appKey']),'client_secret'=>nxs_gas($options['appSec']),'grant_type'=>'authorization_code')));
+        $tknURL = 'https://oauth2.googleapis.com/token';
+        $wprg['body'] = array(
+            'code' => $at,
+            'redirect_uri' => $nxs_snapSetPgURL,
+            'client_id' => nxs_gak($options['appKey']),
+            'client_secret' => nxs_gas($options['appSec']),
+            'grant_type' => 'authorization_code'
+        );
+        $response = nxs_remote_post($tknURL, $wprg);
         if (is_nxs_error($response) || !is_array($response) || empty($response['body'])) die(esc_html__('Blogger token exchange failed.', 'social-networks-auto-poster-facebook-twitter-g'));
         $resp = json_decode($response['body'], true); if (!is_array($resp) || empty($resp['access_token'])) { echo esc_html(isset($resp['error_description'])?$resp['error_description']:__('Blogger did not return an access token.', 'social-networks-auto-poster-facebook-twitter-g')); die(); }
         if (function_exists('get_option')) $currTime = time() + ( get_option( 'gmt_offset' ) * HOUR_IN_SECONDS ); else  $currTime = time();
@@ -38,10 +47,12 @@ if (!class_exists("nxs_snapClassBG")) { class nxs_snapClassBG extends nxs_snapCl
         $options['accessTokenExp'] = $currTime + $resp['expires_in']; if (!empty($resp['refresh_token'])) $options['refreshToken'] = $resp['refresh_token']; echo "<br/>----=={ Expires: ".esc_html(date('Y-m-d H:i:s', $options['accessTokenExp']))." }==---- <br/>";
         
         if (!empty($options['blogID'])){
-          if (substr($options['blogID'], 0, 4)=='http') $tknURL = 'https://www.googleapis.com/blogger/v3/blogs/byurl/?url='.rawurlencode($options['blogID']);
-            else $tknURL = 'https://www.googleapis.com/blogger/v3/blogs/'.rawurlencode($options['blogID']);
+          $tknURL = (substr($options['blogID'], 0, 4)=='http') ? 'https://www.googleapis.com/blogger/v3/blogs/byurl/?url='.urlencode($options['blogID']) : 'https://www.googleapis.com/blogger/v3/blogs/'.$options['blogID'];  
+          $wprg['headers'] = array(
+              'Authorization' => 'Bearer ' . $options['accessToken']
+          );
         }        
-        $wprg['headers'] = array('Authorization'=>'Bearer '.$options['accessToken']); $response = nxs_remote_get($tknURL, $wprg); if (is_nxs_error($response)) die(esc_html__('Unable to retrieve Blogger account details.', 'social-networks-auto-poster-facebook-twitter-g')); $user = json_decode($response['body'], true);
+        $response = nxs_remote_get($tknURL, $wprg); if (is_nxs_error($response)) die(esc_html__('Unable to retrieve Blogger account details.', 'social-networks-auto-poster-facebook-twitter-g')); $user = json_decode($response['body'], true);
         if (!empty($user['url'])) { $options['blogURL'] = $user['url']; $options['blogID'] = $user['id']; $options['blogInfo'] = $user['name']." [".$user['id']."] (".$user['url'].")"; nxs_save_glbNtwrks($ntInfo['lcode'],$ii,$options,'*');                      
           ?><script type="text/javascript">window.location = "<?php echo $nxs_snapSetPgURL; ?>"</script>      
         <?php }        
@@ -50,45 +61,68 @@ if (!class_exists("nxs_snapClassBG")) { class nxs_snapClassBG extends nxs_snapCl
     } 
   }    
   
-  function accTab($ii, $options, $isNew=false){ global $nxs_snapSetPgURL; $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; $oauth_state = nxs_oauth_state_create('bg', $ii); if (empty($options['sid'])) $options['sid']=''; if (empty($options['ssid'])) $options['ssid']=''; if (empty($options['nid'])) $options['nid']=''; if (empty($options['hsid'])) $options['hsid']='';?>
+  function accTab($ii, $options, $isNew=false){ global $nxs_snapSetPgURL; $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; $oauth_state = nxs_oauth_state_create('bg', $ii); ?>
     <div style="width:100%;"><strong><?php _e('Blogger Blog ID', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong><i><?php _e('Log to your Blogger management panel and look at the URL of your blog: http://www.blogger.com/blogger.g?blogID=8959085979163812093#allposts. Your Blog ID will be: 8959085979163812093', 'social-networks-auto-poster-facebook-twitter-g'); ?></i></div><input name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][blogID]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['blogID'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /><br/><br/>     
-    <div style="display: <?php echo (empty($options['apiToUse']))?"block":"none"; ?>;">    
-      <div style="width:100%; text-align: center; color:#005800; font-weight: bold; font-size: 14px;">You can choose what API you would like to use. </div>          
-      <span style="color:#005800; font-weight: bold; font-size: 14px;">Blogger Native API:</span> Free built-in API from Blogger. More secure, more stable. More complicated - <b style="color: red;">requires approval of access to API by Google (3-5 days)</b> and authorization. <br/><br/>    
-      <span style="color:#005800; font-weight: bold; font-size: 14px;">NextScripts API for Blogger:</span> Premium API with extended functionality. Easier to configure, but less secure - requires your password.<br/><br/>
     
-      <select name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][apiToUse]" onchange="if (jQuery(this).val()=='<?php echo esc_attr($nt); ?>') { jQuery('.nxs_<?php echo esc_attr($nt); ?>_nxapi_<?php echo esc_attr($ii); ?>').hide(); jQuery('.nxs_<?php echo esc_attr($nt); ?>_bgapi_<?php echo esc_attr($ii); ?>').show(); }else { jQuery('.nxs_<?php echo esc_attr($nt); ?>_bgapi_<?php echo esc_attr($ii); ?>').hide(); jQuery('.nxs_<?php echo esc_attr($nt); ?>_nxapi_<?php echo esc_attr($ii); ?>').show(); }"><option <?php echo (empty($options['apiToUse']) || $options['apiToUse'] =='bg')?"selected":""; ?> value="bg">Blogger API</option><option <?php echo (!empty($options['apiToUse']) && $options['apiToUse'] =='nx')?"selected":""; ?> value="nx">NextScripts API</option></select><hr/>
-    
-    </div>
-    
-    <div id="nxsAPIBG<?php echo esc_attr($ii); ?>" class="nxs_<?php echo esc_attr($nt); ?>_bgapi_<?php echo esc_attr($ii); ?>" style="display: <?php echo (empty($options['apiToUse']) || $options['apiToUse'] =='bg')?"block":"none"; ?>;"><h3>Blogger API</h3>    
+    <div id="nxsAPIBG<?php echo esc_attr($ii); ?>" class="nxs_<?php echo esc_attr($nt); ?>_bgapi_<?php echo esc_attr($ii); ?>">
       <div class="subDiv" id="sub<?php echo esc_attr($ii); ?>DivL" style="display: block;"> <?php $this->elemKeySecret($ii,'Client ID','Client Secret', $options['appKey'], $options['appSec'],'appKey','appSec','https://console.developers.google.com/'); ?>
       <br/><br/>
-      <?php  if($options['appKey']=='') { ?>
-        <b><?php _e('Authorize Your '.$ntInfo['name'].' Account', 'social-networks-auto-poster-facebook-twitter-g'); ?></b> <?php _e('Please click "Update Settings" to be able to Authorize your account.', 'social-networks-auto-poster-facebook-twitter-g');  
-      } else { if(!empty($options['accessToken']) && !empty($options['accessTokenSec'])) { 
-        _e('Your '.$ntInfo['name'].' Account has been authorized.', 'social-networks-auto-poster-facebook-twitter-g'); ?> <br/>Blog ID: <?php _e(apply_filters('format_to_edit', htmlentities($options['blogInfo'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g'); ?>.
-        <?php _e('You can', 'social-networks-auto-poster-facebook-twitter-g'); ?> Re- <?php } ?>            
-        <a href="<?php echo esc_url('https://accounts.google.com/o/oauth2/v2/auth?'.http_build_query(array('redirect_uri'=>$nxs_snapSetPgURL,'response_type'=>'code','client_id'=>nxs_gak($options['appKey']),'scope'=>'https://www.googleapis.com/auth/blogger','prompt'=>'consent','access_type'=>'offline','state'=>$oauth_state), '', '&')); ?>">Authorize Your Blogger Account</a>
-        <?php if (empty($options['accessToken'])) { ?> <div class="blnkg">&lt;=== <?php _e('Authorize your account', 'social-networks-auto-poster-facebook-twitter-g'); ?> ===</div> <?php } 
-      } ?><br/><br/>
+      <div id="bg_authorize_wrap_<?php echo esc_attr($ii); ?>" style="<?php echo ($options['appKey']!='') ? '' : 'display: none;'; ?>">
+          <?php if(!empty($options['accessToken']) && !empty($options['accessTokenSec'])) { ?>
+              <?php _e('Your '.$ntInfo['name'].' Account has been authorized.', 'social-networks-auto-poster-facebook-twitter-g'); ?> <br/>Blog ID: <?php _e(apply_filters('format_to_edit', htmlentities($options['blogInfo'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g'); ?>.<br/>
+              <?php _e('You can', 'social-networks-auto-poster-facebook-twitter-g'); ?> Re-
+          <?php } ?>
+          <a id="bg_authLink_<?php echo esc_attr($ii); ?>" href="<?php echo esc_url('https://accounts.google.com/o/oauth2/v2/auth?'.http_build_query(array('redirect_uri'=>$nxs_snapSetPgURL,'response_type'=>'code','client_id'=>nxs_gak($options['appKey']),'scope'=>'https://www.googleapis.com/auth/blogger','prompt'=>'consent','access_type'=>'offline','state'=>$oauth_state), '', '&')); ?>" onclick="var authUrl = jQuery(this).attr('href'); nxs_svSetAdv('bg', '<?php echo esc_js($ii); ?>', '<?php echo esc_js($isNew ? 'domBG'.$ii.'Div' : 'nxsAllAccntsDiv'); ?>', '', authUrl, '1'); return false;">Authorize Your Blogger Account</a>
+          <?php if (empty($options['accessToken'])) { ?>
+              <div class="blnkg" id="bg_blnkg_<?php echo esc_attr($ii); ?>">&lt;=== <?php _e('Authorize your account', 'social-networks-auto-poster-facebook-twitter-g'); ?> ===</div>
+          <?php } ?>
+          <br/><br/>
+      </div>
+      
+      <div id="bg_notice_wrap_<?php echo esc_attr($ii); ?>" style="<?php echo ($options['appKey']=='') ? '' : 'display: none;'; ?>">
+          <b><?php _e('Authorize Your '.$ntInfo['name'].' Account', 'social-networks-auto-poster-facebook-twitter-g'); ?></b>. <?php _e('Please enter your Client ID and Client Secret above to enable authorization.', 'social-networks-auto-poster-facebook-twitter-g'); ?>
+          <br/><br/>
+      </div>
+      <?php
+      static $bg_script_printed = false;
+      if (!$bg_script_printed) {
+          $bg_script_printed = true;
+          ?>
+          <script type="text/javascript">
+          function nxs_bg_client_changed(ii, redirectUriBase, oauthState) {
+              var appKey = jQuery('#bgappKey' + ii).val().trim();
+              var authorizeWrap = jQuery('#bg_authorize_wrap_' + ii);
+              var noticeWrap = jQuery('#bg_notice_wrap_' + ii);
+              var authLink = jQuery('#bg_authLink_' + ii);
+              
+              if (appKey !== '') {
+                  authorizeWrap.show();
+                  noticeWrap.hide();
+                  
+                  var cleanAppKey = appKey;
+                  if (cleanAppKey.indexOf('::') > -1) {
+                      cleanAppKey = cleanAppKey.split('::')[0];
+                  }
+                  
+                  authLink.attr('href', "https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=" + encodeURIComponent(redirectUriBase) + "&response_type=code&client_id=" + encodeURIComponent(cleanAppKey) + "&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fblogger&prompt=consent&access_type=offline&state=" + encodeURIComponent(oauthState));
+              } else {
+                  authorizeWrap.hide();
+                  noticeWrap.show();
+              }
+          }
+          </script>
+          <?php
+      }
+      ?>
+      <script type="text/javascript">
+      jQuery(document).ready(function() {
+          jQuery(document).on('input', '#bgappKey<?php echo $ii; ?>, #bgappSec<?php echo $ii; ?>', function() {
+              nxs_bg_client_changed(<?php echo absint($ii); ?>, <?php echo wp_json_encode($nxs_snapSetPgURL); ?>, <?php echo wp_json_encode($oauth_state); ?>);
+          });
+      });
+      </script><br/><br/>
       </div>
     </div>
-    <div id="nxsAPINX<?php echo esc_attr($ii); ?>" class="nxs_bg_nxapi_<?php echo esc_attr($ii); ?>" style="display: <?php echo (!empty($options['apiToUse']) && $options['apiToUse'] =='nx')?"block":"none"; ?>;"><h3>NextScripts API</h3>
-    <?php if (class_exists('nxsAPI_GP')) { ?>                 
-        <div class="subDiv" id="sub<?php echo esc_attr($ii); ?>DivN" style="display: block;"><?php $this->elemUserPass($ii, $options['uName'], $options['uPass']); ?></div>          
-        
-        
-    <div id="ups<?php echo esc_attr($nt.$ii); ?>UPS" style="padding-top: 10px;"><a href="#" onclick="jQuery('#ups<?php echo esc_attr($nt.$ii); ?>S').show();return false;">Use session</a> (Optional - use only if you are having login problems)</div>
-    <div id="ups<?php echo esc_attr($nt.$ii); ?>S" class="ups<?php echo esc_attr($nt.$ii); ?>"  style="padding-left: 15px; padding-top: 10px; display:none;">
-       SID:&nbsp;&nbsp;<input style="width:400px;" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][sid]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['sid'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /> <br/>
-       SSID:&nbsp;<input style="width:400px;" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][ssid]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['ssid'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /> <br/>
-       HSID:&nbsp;<input style="width:400px;" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][hsid]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['hsid'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /> <br/>
-    </div>
-        
-        
-        <?php } else { nxs_show_noLibWrn('"NextScripts API Library for Blogger" is NOT installed'); } ?>           
-    </div><br/>
     
     <br/><?php $this->elemTitleFormat($ii,'Message Title Format','msgTFormat',$options['msgTFormat']); $this->elemMsgFormat($ii,'Message Format','msgFormat',$options['msgFormat']); ?>
     <div style="margin: 0px;"><input value="1" type="checkbox" name="<?php echo esc_attr($nt); ?>[<?php echo esc_attr($ii); ?>][inclTags]"  <?php if ((int)$options['inclTags'] == 1) echo "checked"; ?> /> <strong><?php _e('Post with tags', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong></div>
@@ -97,22 +131,14 @@ if (!class_exists("nxs_snapClassBG")) { class nxs_snapClassBG extends nxs_snapCl
      <?php
   }
   function advTab($ii, $options){  $this->showProxies($this->ntInfo['lcode'], $ii, $options); }                             
-  //#### Set Unit Settings from POST
   function setNTSettings($post, $options){ $otp = array(); //prr($options);
     foreach ($options as $oo => $v){  if (isset($v['ck'])) unset($v['ck']);
-        if (isset($oo) && $oo!=='' && ((!empty($v['appKey']) && !empty($v['appSec'])) || (!empty($v['uPass']) && !empty($v['uName']))) ) $otp[$oo] = $v;
+        if (isset($oo) && $oo!=='' && !empty($v['appKey']) && !empty($v['appSec'])) $otp[$oo] = $v;
     } $options = $otp;
     foreach ($post as $ii => $pval){       
       if (!empty($pval['blogID']) && !empty($pval['blogID'])){ if (!isset($options[$ii])) $options[$ii] = array(); $options[$ii] = $this->saveCommonNTSettings($pval,$options[$ii]);
-        //## Uniqe Items        
-        if (isset($pval['sid']))  $options[$ii]['sid'] = trim($pval['sid']);                
-        if (isset($pval['ssid']))  $options[$ii]['ssid'] = trim($pval['ssid']);             
-        if (isset($pval['hsid']))  $options[$ii]['hsid'] = trim($pval['hsid']);                   
-        if (isset($pval['nid']))  $options[$ii]['nid'] = trim($pval['nid']);                
-        
         if (isset($pval['inclTags'])) $options[$ii]['inclTags'] = trim($pval['inclTags']); else $options[$ii]['inclTags'] = 0;
         if (isset($pval['inclCatsAsTags'])) $options[$ii]['inclCatsAsTags'] = trim($pval['inclCatsAsTags']); else $options[$ii]['inclCatsAsTags'] = 0;
-        if (isset($pval['apiToUse'])) $options[$ii]['apiToUse'] = trim($pval['apiToUse']);
         if (isset($pval['blogID'])) $options[$ii]['blogID'] = trim($pval['blogID']);
       } elseif ( count($pval)==1 ) if (isset($pval['do'])) $options[$ii]['do'] = $pval['do']; else $options[$ii]['do'] = 0; 
     } return $options;

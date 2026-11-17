@@ -23,26 +23,115 @@ if (!class_exists("nxs_snapClassVK")) { class nxs_snapClassVK extends nxs_snapCl
     $this->showGNewNTSettings($ii, $defO); 
   }
   //#### Show Unit  Settings  
-  function checkIfSetupFinished($options) { return !empty($options['appAuthUser']); }
+  function checkIfSetupFinished($options) { return !empty($options['appAuthUser']) && !empty($options['appAuthToken']); }
+  function doAuth() {
+    if (!nxs_snap_user_can_access()) return;
+    $page = nxs_get_admin_url('admin.php?page=nxssnap');
+    if (isset($_GET['nxs_vk_start'])) {
+      $ii = absint($_GET['nxs_vk_start']);
+      if (!isset($this->nt[$ii]) || empty($this->nt[$ii]['appID'])) wp_die(esc_html__('Save the VK Application ID before connecting.', 'social-networks-auto-poster-facebook-twitter-g'));
+      $state = nxs_oauth_state_create('vk', $ii);
+      $verifier = nxs_b64url_encode(random_bytes(48));
+      set_transient('nxs_vk_pkce_'.hash('sha256', $state), $verifier, 600);
+      $url = 'https://id.vk.ru/authorize?'.http_build_query(array(
+        'response_type'=>'code', 'client_id'=>$this->nt[$ii]['appID'], 'redirect_uri'=>$page,
+        'state'=>$state, 'code_challenge'=>nxs_b64url_encode(hash('sha256', $verifier, true)),
+        'code_challenge_method'=>'S256', 'scope'=>'vkid.personal_info groups wall photos video', 'prompt'=>'consent',
+      ), '', '&', PHP_QUERY_RFC3986);
+      self::vkRedirect($url, true);
+    }
+    $state = isset($_GET['state']) ? wp_unslash($_GET['state']) : '';
+    if (!is_string($state) || strpos($state, 'nxs-vk-') !== 0) return;
+    $pkce_key = 'nxs_vk_pkce_'.hash('sha256', $state);
+    $verifier = get_transient($pkce_key);
+    delete_transient($pkce_key);
+    if (!nxs_oauth_state_validate($state, 'vk', $ii) || !isset($this->nt[$ii]) || !is_string($verifier) || $verifier === '') wp_die(esc_html__('Invalid or expired VK authorization state.', 'social-networks-auto-poster-facebook-twitter-g'), '', array('response'=>403));
+    if (!empty($_GET['error'])) wp_die(esc_html(sanitize_text_field(wp_unslash($_GET['error']))));
+    $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
+    $device = isset($_GET['device_id']) ? sanitize_text_field(wp_unslash($_GET['device_id'])) : '';
+    if ($code === '' || $device === '') wp_die(esc_html__('VK did not return an authorization code and device ID.', 'social-networks-auto-poster-facebook-twitter-g'));
+    $token = self::vkTokenRequest(array('grant_type'=>'authorization_code', 'code'=>$code, 'code_verifier'=>$verifier, 'device_id'=>$device, 'state'=>$state, 'client_id'=>$this->nt[$ii]['appID'], 'redirect_uri'=>$page));
+    if (empty($token['access_token']) || empty($token['refresh_token'])) wp_die(esc_html__('VK authorization did not return a renewable publishing token.', 'social-networks-auto-poster-facebook-twitter-g'));
+    $profile_response = wp_remote_post('https://api.vk.com/method/users.get', array('timeout'=>30, 'redirection'=>0, 'body'=>array('access_token'=>$token['access_token'], 'fields'=>'screen_name', 'v'=>'5.199')));
+    $profile_data = is_wp_error($profile_response) ? null : json_decode(wp_remote_retrieve_body($profile_response), true);
+    $profile = is_array($profile_data) && !empty($profile_data['response'][0]) ? $profile_data['response'][0] : null;
+    if (empty($profile['id']) || (!empty($token['user_id']) && (string)$profile['id'] !== (string)$token['user_id'])) wp_die(esc_html__('VK profile could not be verified. Please reconnect.', 'social-networks-auto-poster-facebook-twitter-g'));
+    $account = $this->nt[$ii];
+    $account['appAuthToken'] = $token['access_token'];
+    $account['appAuthUser'] = (string)$profile['id'];
+    $account['vkRefreshToken'] = $token['refresh_token'];
+    $account['vkDeviceID'] = $device;
+    $account['vkTokenExpires'] = time() + max(0, (int)($token['expires_in'] ?? 0));
+    $account['vkAuthFlow'] = 'vkid';
+    $account['authResp'] = '';
+    $resolved = $this->resolveVKID($account['pgID'] ?? '', $account['appAuthToken'], $account['url'] ?? '');
+    if ($resolved !== '') $account['pgIntID'] = $resolved;
+    elseif (empty($account['pgIntID'])) $account['pgIntID'] = $account['appAuthUser'];
+    nxs_save_glbNtwrks('vk', $ii, $account, '*');
+    self::vkRedirect($page, false);
+  }
+  static function vkRedirect($url, $external) {
+    if (!headers_sent()) {
+      if ($external) wp_redirect($url); else wp_safe_redirect($url);
+      exit;
+    }
+    echo '<script>window.location.replace('.wp_json_encode($url).');</script>';
+    echo '<p><a href="'.esc_url($url).'">'.esc_html__('Continue VK authorization', 'social-networks-auto-poster-facebook-twitter-g').'</a></p>';
+    exit;
+  }
+  static function vkTokenRequest($params) {
+    $response = wp_remote_post('https://id.vk.ru/oauth2/auth', array('timeout'=>30, 'redirection'=>0, 'body'=>$params));
+    if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) return array();
+    $data = json_decode(wp_remote_retrieve_body($response), true);
+    if (!is_array($data) || !empty($data['error']) || empty($data['access_token'])) return array();
+    if (isset($data['state']) && (!isset($params['state']) || !hash_equals($params['state'], $data['state']))) return array();
+    return $data;
+  }
+  static function refreshVKToken(&$options) {
+    if (($options['vkAuthFlow'] ?? '') !== 'vkid') return true;
+    if (!empty($options['appAuthToken']) && (int)($options['vkTokenExpires'] ?? 0) > time()+60) return true;
+    if (empty($options['vkRefreshToken']) || empty($options['vkDeviceID']) || empty($options['appID'])) return false;
+    $token = self::vkTokenRequest(array('grant_type'=>'refresh_token', 'refresh_token'=>$options['vkRefreshToken'], 'device_id'=>$options['vkDeviceID'], 'state'=>nxs_b64url_encode(random_bytes(32)), 'client_id'=>$options['appID'], 'redirect_uri'=>nxs_get_admin_url('admin.php?page=nxssnap')));
+    if (empty($token['access_token'])) return false;
+    if (!empty($token['user_id']) && !empty($options['appAuthUser']) && (string)$token['user_id'] !== (string)$options['appAuthUser']) return false;
+    $options['appAuthToken'] = $token['access_token'];
+    if (!empty($token['refresh_token'])) $options['vkRefreshToken'] = $token['refresh_token'];
+    $options['vkTokenExpires'] = time() + max(0, (int)($token['expires_in'] ?? 0));
+    if (isset($options['ii'])) nxs_save_glbNtwrks('vk', $options['ii'], array('appAuthToken'=>$options['appAuthToken'], 'vkRefreshToken'=>$options['vkRefreshToken'], 'vkTokenExpires'=>$options['vkTokenExpires']), '*');
+    return true;
+  }
   function accTab($ii, $options, $isNew=false){ $ntInfo = $this->ntInfo; $nt = $ntInfo['lcode']; ?>
      <div style="width:100%;"><strong><?php echo $ntInfo['name']?>&nbsp;<?php _e('URL', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong> </div>
      <div style="font-size: 11px; margin: 0px;"><?php _e('Could be your VK.Com Profile, Public or Group Page', 'social-networks-auto-poster-facebook-twitter-g'); ?></div>
-     <input name="vk[<?php echo esc_attr($ii); ?>][url]" id="apurl" style="width: 50%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['url'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />                
+      <input name="vk[<?php echo esc_attr($ii); ?>][url]" id="apurl" style="width: 50%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['url'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />                
+      <br/><div style="font-size: 11px; margin-top: 4px; color: #555;"><?php _e('Resolved Wall Target ID:', 'social-networks-auto-poster-facebook-twitter-g'); ?> <strong><?php echo !empty($options['pgIntID']) ? esc_html($options['pgIntID']) : __('Not Resolved (Will post to Personal Wall)', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong></div>
+      <br/>
+      <div style="width:100%;"><strong><?php echo $ntInfo['name']?>&nbsp;<?php _e('Application ID', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong> <a href="https://vk.com/apps?act=manage" target="_blank"><?php _e('[VK Apps]', 'social-networks-auto-poster-facebook-twitter-g'); ?></a> </div> 
+     <input name="vk[<?php echo esc_attr($ii); ?>][appID]" id="vk_appID_<?php echo esc_attr($ii); ?>" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['appID'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" oninput="nxs_vk_app_id_changed('<?php echo esc_attr($ii); ?>');" />  
      <br/><br/>
-     <div style="width:100%;"><strong><?php echo $ntInfo['name']?>&nbsp;<?php _e('Application ID', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong> <a href="https://vk.com/apps?act=manage" target="_blank"><?php _e('[VK Apps]', 'social-networks-auto-poster-facebook-twitter-g'); ?></a> </div> 
-    <input name="vk[<?php echo esc_attr($ii); ?>][appID]" style="width: 30%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['appID'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" />  
-    <br/>
-    <?php  if($options['appID']!='') { ?>
-    <div style="width:100%;"><strong><?php echo $ntInfo['name']?>&nbsp;<?php _e('Auth Response', 'social-networks-auto-poster-facebook-twitter-g'); ?>:</strong> </div><input name="vk[<?php echo esc_attr($ii); ?>][authResp]" style="width: 50%;" value="<?php _e(apply_filters('format_to_edit', htmlentities($options['authResp'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>" /><br/><br/>
-    <?php } ?>
-    <?php  if($options['appID']=='') { ?>
-            <?php _e('<b>Authorize Your vKontakte(VK) Account</b>. Please click "Update Settings" to be able to Authorize your account.', 'social-networks-auto-poster-facebook-twitter-g'); ?>
-            <?php } else { if(isset($options['appAuthUser']) && $options['appAuthUser']>0) { ?>
-            <?php _e('Your vKontakte(VK) Account has been authorized.'); ?> User ID: <?php _e(apply_filters('format_to_edit', htmlentities($options['appAuthUser'], ENT_COMPAT, "UTF-8")), 'social-networks-auto-poster-facebook-twitter-g') ?>.
-            <?php _e('You can', 'social-networks-auto-poster-facebook-twitter-g'); ?> Re- <?php } ?>      
-             <a target="_blank" rel="noopener noreferrer" href="<?php echo esc_url(add_query_arg(array('client_id'=>$options['appID'],'scope'=>'offline,wall,photos,pages','redirect_uri'=>'https://oauth.vk.com/blank.html','display'=>'page','v'=>'5.131','response_type'=>'token'), 'https://oauth.vk.com/authorize')); ?>">Authorize Your vKontakte(VK) Account</a>
-            <?php if (!isset($options['appAuthUser']) || $options['appAuthUser']<1) { ?> <div class="blnkg">&lt;=== <?php _e('Authorize your account', 'social-networks-auto-poster-facebook-twitter-g'); ?> ===</div> <?php } ?>        
-            <?php } ?><br/><br/> <?php $this->elemMsgFormat($ii,'Message Text Format','msgFormat',$options['msgFormat']); ?>
+
+     <div id="vk_authorize_wrap_<?php echo esc_attr($ii); ?>" style="<?php echo ($options['appID']!='') ? '' : 'display: none;'; ?>">
+         <?php if (!empty($options['appAuthUser'])) { ?>
+             <p><?php esc_html_e('Your VK account is authorized. User ID:', 'social-networks-auto-poster-facebook-twitter-g'); ?> <?php echo esc_html($options['appAuthUser']); ?></p>
+         <?php } ?>
+         <?php if (!$isNew && !empty($options['appID'])) { ?>
+             <a class="button button-primary" href="<?php echo esc_url(add_query_arg('nxs_vk_start', $ii, nxs_get_admin_url('admin.php?page=nxssnap'))); ?>"><?php echo !empty($options['appAuthUser']) ? esc_html__('Reconnect VK', 'social-networks-auto-poster-facebook-twitter-g') : esc_html__('Connect VK', 'social-networks-auto-poster-facebook-twitter-g'); ?></a>
+         <?php } else { ?>
+             <p><?php esc_html_e('Save the account and Application ID, then connect VK.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
+         <?php } ?>
+         <p class="description"><?php esc_html_e('Add this redirect URL to your VK ID application:', 'social-networks-auto-poster-facebook-twitter-g'); ?> <code><?php echo esc_html(nxs_get_admin_url('admin.php?page=nxssnap')); ?></code></p>
+     </div>
+     <div id="vk_notice_wrap_<?php echo esc_attr($ii); ?>" style="<?php echo ($options['appID']=='') ? '' : 'display: none;'; ?>">
+         <?php esc_html_e('Enter your VK ID Application ID above, then save the account.', 'social-networks-auto-poster-facebook-twitter-g'); ?>
+     </div>
+     <script type="text/javascript">
+     function nxs_vk_app_id_changed(ii) {
+         var appID = document.getElementById('vk_appID_' + ii).value.trim();
+         document.getElementById('vk_authorize_wrap_' + ii).style.display = appID ? 'block' : 'none';
+         document.getElementById('vk_notice_wrap_' + ii).style.display = appID ? 'none' : 'block';
+     }
+     </script>
+     <?php $this->elemMsgFormat($ii,'Message Text Format','msgFormat',$options['msgFormat']); ?>
     
      <div style="width:100%;"><strong id="altFormatText">Post Type:</strong> &lt;-- (<a id="showShAtt" onmouseout="hidePopShAtt('<?php echo esc_attr($ii); ?>VKX');" onmouseover="showPopShAtt('<?php echo esc_attr($ii); ?>VKX', event);" onclick="return false;" class="underdash" href="https://www.nextscripts.com/blog/"><?php _e('What\'s the difference?', 'social-networks-auto-poster-facebook-twitter-g'); ?></a>) </div>                      
 <div style="margin-left: 10px;">
@@ -56,6 +145,55 @@ if (!class_exists("nxs_snapClassVK")) { class nxs_snapClassVK extends nxs_snapCl
    <?php
   }
   function advTab($ii, $options){ $this->askForSURL( $this->ntInfo['lcode'], $ii, $options); }
+  function resolveVKID($screenName, $token, $url = '') {
+       // 1. Direct match for club/group/public/event/id followed by digits (with optional hyphen)
+       if (preg_match('/^(club|public|event|group|club_id)-?(\d+)$/i', $screenName, $matches)) {
+           return '-' . $matches[2];
+       }
+       if (preg_match('/^id-?(\d+)$/i', $screenName, $matches)) {
+           return $matches[1];
+       }
+      
+      // 2. Try VK API resolveScreenName if token is available
+      if (!empty($token)) {
+          $apiUrl = 'https://api.vk.com/method/utils.resolveScreenName?v=5.131&screen_name=' . urlencode($screenName) . '&access_token=' . urlencode($token);
+          $response = nxs_remote_get($apiUrl);
+          if (!is_nxs_error($response) && !empty($response['body'])) {
+              $res = json_decode($response['body'], true);
+              if (!empty($res['response']['object_id'])) {
+                  $objID = $res['response']['object_id'];
+                  $type = $res['response']['type'];
+                  if ($type === 'user') {
+                      return $objID;
+                  } else {
+                      return '-' . $objID;
+                  }
+              }
+          }
+      }
+      
+      // 3. Fallback: Parse page contents
+      if (!empty($url)) {
+          $hdrsArr = nxs_getNXSHeaders($url);
+          $advSet = nxs_mkRemOptsArr($hdrsArr);
+          $response = nxs_remote_get($url, $advSet);
+          if (!is_nxs_error($response) && !empty($response['body'])) {
+              $contents = function_exists('mb_convert_encoding') ? mb_convert_encoding($response['body'], 'ISO-8859-1', 'UTF-8') : $response['body'];
+              if (stripos($contents, '<meta property="og:url" content="https://vk.com/') !== false) {
+                  $k = CutFromTo($contents, '<meta property="og:url" content="https://vk.com/', '"');
+                  if (stripos($k, 'club') !== false) return '-' . str_ireplace('club', '', $k);
+                  if (stripos($k, 'public') !== false) return '-' . str_ireplace('public', '', $k);
+                  if (stripos($k, 'id') !== false) return str_ireplace('id', '', $k);
+              }
+              if (stripos($contents, '{"group_id":') !== false) return '-' . CutFromTo($contents, '"group_id":', ',');
+              if (stripos($contents, '{"public_id":') !== false) return '-' . CutFromTo($contents, '"public_id":', ',');
+              if (stripos($contents, '"user_id":') !== false) return CutFromTo($contents, '"user_id":', ',');
+          }
+      }
+      
+      return '';
+  }
+
   //#### Set Unit Settings from POST
   function setNTSettings($post, $options){ 
     foreach ($post as $ii => $pval){       
@@ -65,30 +203,17 @@ if (!class_exists("nxs_snapClassVK")) { class nxs_snapClassVK extends nxs_snapCl
         //## Get VK Info        
         if (isset($pval['url']))  {  $options[$ii]['url'] = trim($pval['url']);   if ( substr($options[$ii]['url'], 0, 4)!=='http' )  $options[$ii]['url'] = 'https://'.$options[$ii]['url'];
           $vkPgID = $options[$ii]['url']; if (substr($vkPgID, -1)=='/') $vkPgID = substr($vkPgID, 0, -1);  $vkPgID = substr(strrchr($vkPgID, "/"), 1); 
-          if (strpos($vkPgID, '?')!==false) $vkPgID = substr($vkPgID, 0, strpos($vkPgID, '?')); $options[$ii]['pgID'] = $vkPgID; //echo $vkPgID;
-          if (strpos($options[$ii]['url'], '?')!==false) $options[$ii]['url'] = substr($options[$ii]['url'], 0, strpos($options[$ii]['url'], '?'));// prr($pval); prr($options[$ii]); // die();
+          if (strpos($vkPgID, '?')!==false) $vkPgID = substr($vkPgID, 0, strpos($vkPgID, '?')); $options[$ii]['pgID'] = $vkPgID; 
+          if (strpos($options[$ii]['url'], '?')!==false) $options[$ii]['url'] = substr($options[$ii]['url'], 0, strpos($options[$ii]['url'], '?'));
+          
+          // Resolve ID dynamically from URL changes
+          $token = !empty($options[$ii]['appAuthToken']) ? $options[$ii]['appAuthToken'] : '';
+          $resolvedID = $this->resolveVKID($vkPgID, $token, $options[$ii]['url']);
+          if (!empty($resolvedID)) {
+              $options[$ii]['pgIntID'] = $resolvedID;
+          }
         }          
-        if (isset($pval['authResp'])) { $options[$ii]['authResp'] = trim($pval['authResp']); 
-          $options[$ii]['appAuthToken'] = trim( CutFromTo($pval['authResp'].'&', 'access_token=','&')); 
-          $options[$ii]['appAuthUser'] = trim( CutFromTo($pval['authResp']."&", 'user_id=','&')); 
-          if (!empty($pval['authResp']))  { $hdrsArr = nxs_getNXSHeaders($pval['url']); $advSet = nxs_mkRemOptsArr($hdrsArr); $response = nxs_remote_get($pval['url'], $advSet); //prr($response);
-            if (is_nxs_error($response)) { echo esc_html__('VK authorization validation failed.', 'social-networks-auto-poster-facebook-twitter-g'); nxsLogIt(array('type'=>'E', 'msg'=>'VK Auth Validation Error', 'extInfo'=>'Remote request failed.')); return $options; }
-            $contents = $response['body']; $contents = utf8_decode($contents); $options[$ii]['pgIntID'] = ''; // prr($contents);
-            //## Lets Get an ID (First try from OG, then from ID)
-              if (stripos($contents, '<meta property="og:url" content="https://vk.com/')!==false) {
-                  $k = CutFromTo($contents, '<meta property="og:url" content="https://vk.com/', '"'); // prr($k);
-                  if (stripos($k, 'club')!==false) { $options[$ii]['pgIntID'] =  '-'.str_ireplace('club','', $k); $type='all'; } //## club aka group
-                  if (stripos($k, 'public')!==false) { $options[$ii]['pgIntID'] =  '-'.str_ireplace('public','', $k); $type='all'; } //## public
-                  if (stripos($k, 'id')!==false) { $options[$ii]['pgIntID'] =  str_ireplace('id','', $k); $type='own'; } // id aka user_id
-              } //prr($options[$ii]['pgIntID']);
-              if (empty($options[$ii]['pgIntID'])) {
-                  if (stripos($contents, '{"group_id":') !== false) { $options[$ii]['pgIntID'] = '-' . CutFromTo($contents, '"group_id":', ','); $type = 'all'; }
-                  if (stripos($contents, '{"public_id":') !== false) { $options[$ii]['pgIntID'] = '-' . CutFromTo($contents, '"public_id":', ','); $type = 'all'; }
-                  if (stripos($contents, '"user_id":') !== false) { $options[$ii]['pgIntID'] = CutFromTo($contents, '"user_id":', ','); $type = 'own'; }
-              }
-              if (empty($options[$ii]['pgIntID'])) $options[$ii]['pgIntID'] = $options[$ii]['appAuthUser'];
-          } $options[$ii]['pgIntID'] = str_replace('"','',$options[$ii]['pgIntID']);
-        } else $options[$ii]['authResp'] = '';
+        $options[$ii]['authResp'] = '';
       } elseif ( count($pval)==1 ) if (isset($pval['do'])) $options[$ii]['do'] = $pval['do']; else $options[$ii]['do'] = 0; 
     } return $options;
   }
