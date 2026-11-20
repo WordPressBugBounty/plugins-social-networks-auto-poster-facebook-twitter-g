@@ -158,7 +158,7 @@ class NXS_PostSocial_State
     public static function clear_connection()
     {
         $state = self::all();
-        foreach (array('token', 'token_encrypted', 'refresh_token_encrypted', 'token_id', 'token_expires_at', 'pending_rotation_key', 'connection_id', 'project_id', 'project_name', 'project_url', 'manage_url', 'account_hint', 'accounts', 'billing', 'supported_networks', 'supported_networks_refreshed_at', 'supported_networks_plugin_version', 'initial_accounts_imported_for', 'pending', 'account_pending', 'account_settings_draft', 'bootstrap_site_uuid', 'account_type', 'account_type_checked_at', 'credential_type') as $key) {
+        foreach (array('token', 'token_encrypted', 'refresh_token_encrypted', 'token_id', 'token_expires_at', 'pending_rotation_key', 'connection_id', 'project_id', 'project_name', 'project_url', 'manage_url', 'account_hint', 'accounts', 'billing', 'billing_checked_at', 'billing_refresh_ok', 'supported_networks', 'supported_networks_refreshed_at', 'supported_networks_plugin_version', 'initial_accounts_imported_for', 'pending', 'account_pending', 'account_settings_draft', 'bootstrap_site_uuid', 'account_type', 'account_type_checked_at', 'credential_type') as $key) {
             unset($state[$key]);
         }
         update_option(self::OPTION, $state, false);
@@ -258,6 +258,13 @@ class NXS_PostSocial_Premium
         add_action('admin_notices', array(__CLASS__, 'render_banner'));
         add_action('network_admin_notices', array(__CLASS__, 'render_banner'));
         add_action('admin_post_nxs_postsocial_dismiss_loyalty', array(__CLASS__, 'dismiss_loyalty'));
+        add_action('admin_post_nxs_postsocial_dismiss_credits', array(__CLASS__, 'dismiss_credits'));
+        add_action('admin_post_nxs_postsocial_open_billing', array(__CLASS__, 'open_billing'));
+        add_action('wp_ajax_nxs_postsocial_open_billing', array(__CLASS__, 'ajax_open_billing'));
+        add_action('admin_post_nxs_postsocial_open_dashboard', array(__CLASS__, 'open_dashboard'));
+        add_action('wp_ajax_nxs_postsocial_open_dashboard', array(__CLASS__, 'ajax_open_dashboard'));
+        add_action('admin_footer', array(__CLASS__, 'render_login_forms'));
+        add_action('admin_enqueue_scripts', array(__CLASS__, 'enqueue_login_script'));
     }
 
     private static function is_snap_page()
@@ -268,8 +275,13 @@ class NXS_PostSocial_Premium
 
     public static function preload_for_admin_page()
     {
+        if (!self::is_snap_page()) return;
+        if (current_user_can('manage_options') || current_user_can('haveown_snap_accss')) {
+            $page = sanitize_key(wp_unslash($_GET['page']));
+            self::refresh_billing($page === 'nxssnap-postsocial' ? 0 : 60);
+        }
+        if (!current_user_can('manage_options')) return;
         if (!function_exists('nxs_postsocial_check_snap_premium_subscription')) return;
-        if (!self::is_snap_page() || !current_user_can('manage_options')) return;
         $page = sanitize_key(wp_unslash($_GET['page']));
         $state = NXS_PostSocial_State::all();
         if ($page === 'nxssnap-postsocial' || empty($state['premium_subscription']['checked_at'])) self::check_on_page_open();
@@ -277,8 +289,18 @@ class NXS_PostSocial_Premium
 
     public static function render_banner()
     {
-        if (!self::is_snap_page() || !current_user_can('manage_options')) return;
+        if (!self::is_snap_page()) return;
         $state = NXS_PostSocial_State::all();
+        if (NXS_PostSocial_State::connected() && self::credits_exhausted(!empty($state['billing']) ? $state['billing'] : array())) {
+            $screen = get_current_screen();
+            $screen_id = $screen ? $screen->id : 'toplevel_page_nxssnap';
+            if (self::credits_notice_dismissed()) {
+                add_meta_box('nxs_postsocial_credits', __('Post.Social Credits', 'social-networks-auto-poster-facebook-twitter-g'), array(__CLASS__, 'render_credits_sidebar'), array_unique(array($screen_id, 'toplevel_page_nxssnap')), 'side', 'default');
+            } elseif (sanitize_key(wp_unslash($_GET['page'])) !== 'nxssnap-postsocial') {
+                add_meta_box('nxs_postsocial_credits', __('Post.Social Credits', 'social-networks-auto-poster-facebook-twitter-g'), array(__CLASS__, 'render_credits_main'), $screen_id, 'normal', 'high');
+            }
+        }
+        if (!current_user_can('manage_options')) return;
         $provider = function_exists('nxs_postsocial_check_snap_premium_subscription');
         $key = $provider ? NXS_PostSocial_State::premium_key() : '';
         $confirmed = $provider && !empty($state['premium_subscription']['active']) && $key !== '' && !empty($state['premium_key_hash']) && hash_equals($state['premium_key_hash'], hash_hmac('sha256', $key, wp_salt('auth')));
@@ -404,6 +426,225 @@ class NXS_PostSocial_Premium
     private static function register_new_user_sidebar()
     {
         add_meta_box('nxs_postsocial_new_user', __('Post.Social Cloud Offer', 'social-networks-auto-poster-facebook-twitter-g'), array(__CLASS__, 'render_new_user_sidebar'), 'toplevel_page_nxssnap', 'side', 'default');
+    }
+
+    public static function refresh_billing($max_age = 60)
+    {
+        $state = NXS_PostSocial_State::all();
+        if (!NXS_PostSocial_State::connected()) return array();
+        if (!empty($state['billing_checked_at']) && time() - (int) $state['billing_checked_at'] < (int) $max_age) {
+            return !empty($state['billing']) && is_array($state['billing']) ? $state['billing'] : array();
+        }
+        $result = (new NXS_PostSocial_Api())->request('GET', 'billing');
+        $values = array('billing_checked_at' => time(), 'billing_refresh_ok' => false);
+        if (!empty($result['ok']) && !empty($result['data']) && is_array($result['data'])) {
+            $values['billing'] = $result['data'];
+            $values['billing_refresh_ok'] = true;
+        }
+        $state = NXS_PostSocial_State::update($values);
+        return !empty($state['billing']) && is_array($state['billing']) ? $state['billing'] : array();
+    }
+
+    public static function managed_credits_exhausted($billing)
+    {
+        return self::credits_exhausted_for($billing, 'managed');
+    }
+
+    public static function credits_exhausted($billing)
+    {
+        return self::credits_exhausted_for($billing, 'managed') || self::credits_exhausted_for($billing, 'direct');
+    }
+
+    private static function credits_exhausted_for($billing, $type)
+    {
+        if (!is_array($billing) || (isset($billing['billing_enabled']) && !$billing['billing_enabled'])) return false;
+        if (!isset($billing['allowances'][$type]['remaining']) || (int) $billing['allowances'][$type]['remaining'] > 0) return false;
+        $reason = !empty($billing['restrictions']['reason_code']) ? sanitize_key($billing['restrictions']['reason_code']) : '';
+        if ($reason !== '' && $reason !== 'insufficient_allowance') return false;
+        if (isset($billing['can_publish'][$type]) && $billing['can_publish'][$type]) return false;
+        return $reason === 'insufficient_allowance' || !empty($billing['subscription']['active']) || (!empty($billing['trial']['status']) && $billing['trial']['status'] === 'active');
+    }
+
+    public static function credits_message()
+    {
+        return __('Post.Social Managed publication credits have run out. Publishing is paused; your connected accounts and settings are safe. Add credits or choose a plan to resume.', 'social-networks-auto-poster-facebook-twitter-g');
+    }
+
+    public static function credits_notice_dismissed()
+    {
+        return (string) get_user_meta(get_current_user_id(), 'nxs_postsocial_credits_dismissed', true) === '1';
+    }
+
+    public static function dismiss_credits()
+    {
+        if (!current_user_can('manage_options') && !current_user_can('haveown_snap_accss')) wp_die(esc_html__('Not allowed.', 'social-networks-auto-poster-facebook-twitter-g'));
+        check_admin_referer('nxs_postsocial_dismiss_credits');
+        update_user_meta(get_current_user_id(), 'nxs_postsocial_credits_dismissed', '1');
+        wp_safe_redirect(wp_get_referer() ?: nxs_get_admin_url('admin.php?page=nxssnap'));
+        exit;
+    }
+
+    public static function render_billing_button($label, $button_class = 'button button-primary', $form_class = '', $button_style = '')
+    {
+        self::render_login_button('billing', $label, $button_class, $form_class, $button_style);
+    }
+
+    public static function render_dashboard_button($label, $button_class = 'button button-primary')
+    {
+        self::render_login_button('dashboard', $label, $button_class);
+    }
+
+    private static function render_login_button($destination, $label, $button_class, $wrapper_class = '', $button_style = '')
+    {
+        ?>
+        <span class="<?php echo esc_attr($wrapper_class); ?>"><button type="submit" form="nxs-postsocial-<?php echo esc_attr($destination); ?>-form" class="<?php echo esc_attr($button_class); ?>"<?php echo $button_style !== '' ? ' style="' . esc_attr($button_style) . '"' : ''; ?>><?php echo esc_html($label); ?></button></span>
+        <?php
+    }
+
+    public static function render_login_forms()
+    {
+        if (!self::is_snap_page()) return;
+        foreach (array('dashboard', 'billing') as $destination) {
+            ?>
+            <form id="nxs-postsocial-<?php echo esc_attr($destination); ?>-form" data-nxs-postsocial-login="<?php echo esc_attr($destination); ?>" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>" target="_blank" rel="noopener" style="display:none">
+                <input type="hidden" name="action" value="nxs_postsocial_open_<?php echo esc_attr($destination); ?>">
+                <?php wp_nonce_field('nxs_postsocial_open_' . $destination); ?>
+            </form>
+            <?php
+        }
+    }
+
+    public static function enqueue_login_script()
+    {
+        if (self::is_snap_page()) wp_enqueue_script('nxs-postsocial-billing', NXS_PLURL . 'js-css/nxs-postsocial-billing.js', array(), NextScripts_SNAP_Version, true);
+    }
+
+    public static function login_result($destination)
+    {
+        if (!in_array($destination, array('dashboard', 'billing'), true)) return array('ok' => false, 'message' => __('Invalid Post.Social destination.', 'social-networks-auto-poster-facebook-twitter-g'));
+        if (!NXS_PostSocial_State::connected()) return array('ok' => false, 'message' => __('Post.Social is not connected.', 'social-networks-auto-poster-facebook-twitter-g'));
+        $state = NXS_PostSocial_State::all();
+        if (empty($state['project_id'])) return array('ok' => false, 'message' => __('The Post.Social Project ID is missing from this site connection.', 'social-networks-auto-poster-facebook-twitter-g'));
+        $result = (new NXS_PostSocial_Api())->request('POST', 'temporary-login', array('project_id' => $state['project_id'], 'destination' => $destination));
+        if (empty($result['ok'])) {
+            $message = !empty($result['error']['message']) && is_scalar($result['error']['message']) ? (string) $result['error']['message'] : __('Post.Social could not open the requested page. Please try again.', 'social-networks-auto-poster-facebook-twitter-g');
+            $credential = NXS_PostSocial_State::token();
+            if ($credential !== '') $message = str_replace($credential, '[redacted]', $message);
+            $message = preg_replace('~https://[^\s]+/snap/temporary-login\?[^\s]+~i', '[redacted]', $message);
+            return array('ok' => false, 'message' => $message);
+        }
+        $data = !empty($result['data']) && is_array($result['data']) ? $result['data'] : array();
+        $url = !empty($data['login_url']) && is_string($data['login_url']) ? $data['login_url'] : '';
+        $web_host = strtolower((string) wp_parse_url(NXS_POSTSOCIAL_WEB_URL, PHP_URL_HOST));
+        if ($url === '' || empty($data['destination']) || $data['destination'] !== $destination
+            || !isset($data['expires_in']) || (int) $data['expires_in'] <= 0
+            || !nxs_validate_remote_url($url, true)
+            || strtolower((string) wp_parse_url($url, PHP_URL_HOST)) !== $web_host
+            || wp_parse_url($url, PHP_URL_PATH) !== '/snap/temporary-login') {
+            return array('ok' => false, 'message' => __('Post.Social returned an invalid login link. Please try again.', 'social-networks-auto-poster-facebook-twitter-g'));
+        }
+        return array('ok' => true, 'login_url' => $url, 'expires_in' => (int) $data['expires_in']);
+    }
+
+    public static function ajax_open_billing()
+    {
+        self::ajax_open_login('billing');
+    }
+
+    public static function ajax_open_dashboard()
+    {
+        self::ajax_open_login('dashboard');
+    }
+
+    private static function ajax_open_login($destination)
+    {
+        check_ajax_referer('nxs_postsocial_open_' . $destination);
+        if (!current_user_can('manage_options') && !current_user_can('haveown_snap_accss')) wp_send_json_error(array('message' => __('Not allowed.', 'social-networks-auto-poster-facebook-twitter-g')), 403);
+        $result = self::login_result($destination);
+        nocache_headers();
+        if (empty($result['ok'])) wp_send_json_error(array('message' => $result['message']), 400);
+        wp_send_json_success(array('login_url' => $result['login_url'], 'expires_in' => $result['expires_in']));
+    }
+
+    public static function open_billing()
+    {
+        self::open_login('billing');
+    }
+
+    public static function open_dashboard()
+    {
+        self::open_login('dashboard');
+    }
+
+    private static function open_login($destination)
+    {
+        if (!current_user_can('manage_options') && !current_user_can('haveown_snap_accss')) wp_die(esc_html__('Not allowed.', 'social-networks-auto-poster-facebook-twitter-g'));
+        check_admin_referer('nxs_postsocial_open_' . $destination);
+        self::redirect_login($destination);
+    }
+
+    public static function redirect_login($destination)
+    {
+        $result = self::login_result($destination);
+        if (empty($result['ok'])) wp_die(esc_html($result['message']));
+        nocache_headers();
+        wp_redirect($result['login_url'], 302, 'SNAP');
+        exit;
+    }
+
+    public static function render_credits_main()
+    {
+        ?>
+        <div class="nxs-ps-credits-main">
+            <style>
+                #nxs_postsocial_credits .inside{padding:16px 20px 18px;margin:0}
+                #nxs_postsocial_credits .hndle{color:#b32d2e}
+                .nxs-ps-credits-main{position:relative;font-size:13px;line-height:1.5}
+                .nxs-ps-credits-main p{margin:0 30px 14px 0}
+                .nxs-ps-credits-main strong,.nxs-ps-credits-sidebar strong{color:#b32d2e}
+                .nxs-ps-credits-main .nxs-ps-credits-dismiss-x{position:absolute;right:0;top:-4px;border:0;background:transparent;color:#646970;font-size:22px;line-height:1;cursor:pointer}
+                .nxs-ps-credits-main .nxs-ps-credits-dismiss-x:hover{color:#b32d2e}
+                .nxs-ps-credits-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+                .nxs-ps-credits-actions form{margin:0}
+                .nxs-ps-credits-main .nxs-ps-credits-action{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:auto!important;min-height:36px;padding:7px 14px;border:1px solid #006b18;border-radius:4px;background:#008a20;color:#fff!important;font-family:inherit;font-size:13px;font-weight:600;line-height:1.3;text-align:center;text-decoration:none!important;box-shadow:none;cursor:pointer}
+                .nxs-ps-credits-main .nxs-ps-credits-action:hover,.nxs-ps-credits-main .nxs-ps-credits-action:focus{border-color:#006b18;background:#006b18;color:#fff!important;text-decoration:none!important}
+                .nxs-ps-credits-main .nxs-ps-credits-actions .button{min-height:36px;padding:0 14px}
+            </style>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="nxs_postsocial_dismiss_credits">
+                <?php wp_nonce_field('nxs_postsocial_dismiss_credits'); ?>
+                <button type="submit" class="nxs-ps-credits-dismiss-x" aria-label="<?php echo esc_attr__('Close credit notice', 'social-networks-auto-poster-facebook-twitter-g'); ?>" title="<?php echo esc_attr__('Close', 'social-networks-auto-poster-facebook-twitter-g'); ?>">&times;</button>
+            </form>
+            <p><strong><?php esc_html_e('Your Post.Social publishing credits have run out.', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php esc_html_e('Cloud auto-publishing is paused, while your connected accounts and settings remain safe. Upgrade your plan or purchase a credit package on Post.Social to resume.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
+            <div class="nxs-ps-credits-actions">
+                <?php self::render_billing_button(__('View Credits & Plans →', 'social-networks-auto-poster-facebook-twitter-g'), 'nxs-ps-credits-action', 'nxs-ps-credits-billing-form'); ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <input type="hidden" name="action" value="nxs_postsocial_dismiss_credits">
+                    <?php wp_nonce_field('nxs_postsocial_dismiss_credits'); ?>
+                    <button type="submit" class="button"><?php esc_html_e('Close', 'social-networks-auto-poster-facebook-twitter-g'); ?></button>
+                </form>
+            </div>
+        </div>
+        <?php
+    }
+
+    public static function render_credits_sidebar()
+    {
+        ?>
+        <div class="nxs-ps-credits-sidebar">
+            <style>
+                #nxs_postsocial_credits .inside{padding:14px 16px 16px;margin:0}
+                .nxs-ps-credits-sidebar{font-size:13px;line-height:1.5}
+                .nxs-ps-credits-sidebar p{margin:0 0 14px}
+                #nxs_postsocial_credits .hndle,.nxs-ps-credits-sidebar strong{color:#b32d2e}
+                .nxs-ps-credits-sidebar .nxs-ps-credits-billing-form{display:block!important;width:100%}
+                .nxs-ps-credits-sidebar .nxs-ps-credits-action{box-sizing:border-box;display:flex!important;align-items:center;justify-content:center;width:100%!important;min-height:40px;padding:8px 12px;border:1px solid #006b18!important;border-radius:4px;background:#008a20!important;color:#fff!important;font-family:inherit;font-size:13px;font-weight:600;line-height:1.3;text-align:center;text-decoration:none!important;box-shadow:none!important;cursor:pointer}
+                .nxs-ps-credits-sidebar .nxs-ps-credits-action:hover,.nxs-ps-credits-sidebar .nxs-ps-credits-action:focus{background:#006b18!important;color:#fff!important;text-decoration:none!important}
+            </style>
+            <p><strong><?php esc_html_e('Your Post.Social publishing credits have run out.', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php esc_html_e('Cloud auto-publishing is paused, while your connected accounts and settings remain safe. Upgrade your plan or purchase a credit package on Post.Social to resume.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
+            <?php self::render_billing_button(__('View Credits & Plans →', 'social-networks-auto-poster-facebook-twitter-g'), 'nxs-ps-credits-action', 'nxs-ps-credits-billing-form'); ?>
+        </div>
+        <?php
     }
 
     public static function render_new_user_sidebar()
@@ -1085,10 +1326,7 @@ class NXS_PostSocial_Integration
             wp_die(esc_html__('You are not allowed to manage Post.Social.', 'social-networks-auto-poster-facebook-twitter-g'));
         }
         self::refresh_bootstrap_account_type();
-        if (NXS_PostSocial_State::connected()) {
-            $billing_result = (new NXS_PostSocial_Api())->request('GET', 'billing');
-            if (!empty($billing_result['ok'])) NXS_PostSocial_State::update(array('billing' => $billing_result['data']));
-        }
+        NXS_PostSocial_Premium::refresh_billing();
         $state = NXS_PostSocial_State::all();
         $connected = NXS_PostSocial_State::connected();
         $requested_intent = isset($_GET['nxs_ps_intent']) ? self::sanitize_intent(wp_unslash($_GET['nxs_ps_intent'])) : '';
@@ -1128,11 +1366,13 @@ class NXS_PostSocial_Integration
         elseif ($trial_status === 'not_started') $trial_text = __('Free trial available', 'social-networks-auto-poster-facebook-twitter-g');
         elseif ($trial_status === 'active') $trial_text = sprintf(_n('Trial active — %d day remaining', 'Trial active — %d days remaining', (int) $trial_days, 'social-networks-auto-poster-facebook-twitter-g'), (int) $trial_days);
         elseif ($trial_status === 'expired') $trial_text = __('Trial expired', 'social-networks-auto-poster-facebook-twitter-g');
-        $plans_url = self::safe_web_url(!empty($billing['manage_url']) ? $billing['manage_url'] : 'https://post.social/pricing');
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Post.Social', 'social-networks-auto-poster-facebook-twitter-g'); ?></h1>
             <div id="poststuff"><div id="post-body" class="metabox-holder columns-2"><div id="post-body-content">
+            <?php if ($connected && NXS_PostSocial_Premium::credits_exhausted($billing) && !NXS_PostSocial_Premium::credits_notice_dismissed()): ?>
+                <div id="nxs_postsocial_credits" class="postbox"><div class="postbox-header"><h2 class="hndle"><?php esc_html_e('Post.Social Credits', 'social-networks-auto-poster-facebook-twitter-g'); ?></h2></div><div class="inside"><?php NXS_PostSocial_Premium::render_credits_main(); ?></div></div>
+            <?php endif; ?>
             <?php if (!$connected) NXS_PostSocial_Premium::render_offer(); ?>
             <?php if (!empty($error['message'])): ?>
                 <div class="notice notice-error"><p><strong><?php echo esc_html(isset($error['code']) ? $error['code'] : 'error'); ?>:</strong> <?php echo esc_html($error['message']); ?></p></div>
@@ -1162,11 +1402,12 @@ class NXS_PostSocial_Integration
                 <p><strong><?php esc_html_e('Account:', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php echo esc_html(!empty($state['account_type']) && $state['account_type'] === 'temporary' ? __('Temporary', 'social-networks-auto-poster-facebook-twitter-g') : __('Regular', 'social-networks-auto-poster-facebook-twitter-g')); ?><?php if (!empty($state['account_type']) && $state['account_type'] === 'temporary'): ?> — <?php esc_html_e('Click Open Post.Social Dashboard button to finish setting up your account.', 'social-networks-auto-poster-facebook-twitter-g'); ?><?php endif; ?></p>
                 <?php if (!empty($state['project_name'])): ?><p><strong><?php esc_html_e('Project:', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php echo esc_html($state['project_name']); ?></p><?php endif; ?>
                 <?php if ($trial_text !== ''): ?><p><strong><?php esc_html_e('Plan status:', 'social-networks-auto-poster-facebook-twitter-g'); ?></strong> <?php echo esc_html($trial_text); ?></p><?php endif; ?>
-                <?php if ($trial_status === 'active' && $trial_days !== null && $trial_days <= 3 && empty($billing['subscription']['active'])): ?><p><?php esc_html_e('Your Post.Social trial is ending soon.', 'social-networks-auto-poster-facebook-twitter-g'); ?> <a href="<?php echo esc_url($plans_url); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('View Plans', 'social-networks-auto-poster-facebook-twitter-g'); ?></a></p><?php endif; ?>
-                <?php if ($trial_status === 'expired' && empty($billing['subscription']['active'])): ?><p><?php esc_html_e('Managed publishing requires an active subscription. Your connected networks and settings are preserved.', 'social-networks-auto-poster-facebook-twitter-g'); ?> <a class="button" href="<?php echo esc_url($plans_url); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('View Plans', 'social-networks-auto-poster-facebook-twitter-g'); ?></a></p><?php endif; ?>
+                <?php self::render_credit_stats($billing, !empty($state['billing_refresh_ok'])); ?>
+                <?php if ($trial_status === 'active' && $trial_days !== null && $trial_days <= 3 && empty($billing['subscription']['active'])): ?><div><p><?php esc_html_e('Your Post.Social trial is ending soon.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p><?php NXS_PostSocial_Premium::render_billing_button(__('View Plans', 'social-networks-auto-poster-facebook-twitter-g'), 'button'); ?></div><?php endif; ?>
+                <?php if ($trial_status === 'expired' && empty($billing['subscription']['active'])): ?><div><p><?php esc_html_e('Managed publishing requires an active subscription. Your connected networks and settings are preserved.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p><?php NXS_PostSocial_Premium::render_billing_button(__('View Plans', 'social-networks-auto-poster-facebook-twitter-g'), 'button'); ?></div><?php endif; ?>
                 <div class="nxs-postsocial-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px">
-                    <?php if (!empty($state['account_type']) && $state['account_type'] === 'temporary'): ?><?php self::action_button('dashboard', __('Open Post.Social Dashboard', 'social-networks-auto-poster-facebook-twitter-g'), 'button button-primary', false, true); ?>
-                    <?php else: ?><a class="button button-primary" href="<?php echo esc_url(self::safe_web_url(NXS_POSTSOCIAL_WEB_URL . '/login')); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Sign In to Post.Social', 'social-networks-auto-poster-facebook-twitter-g'); ?></a><?php endif; ?>
+                    <?php NXS_PostSocial_Premium::render_dashboard_button(__('Open Post.Social Dashboard', 'social-networks-auto-poster-facebook-twitter-g')); ?>
+                    <?php NXS_PostSocial_Premium::render_billing_button(__('Billing / Choose a plan', 'social-networks-auto-poster-facebook-twitter-g'), 'button'); ?>
                     <?php self::action_button('disconnect', __('Disconnect', 'social-networks-auto-poster-facebook-twitter-g'), 'button', true); ?>
                 </div>
             <?php endif; ?>
@@ -1234,6 +1475,37 @@ class NXS_PostSocial_Integration
         }());
         </script>
         <?php endif;
+    }
+
+    private static function render_credit_stats($billing, $refreshed)
+    {
+        if (isset($billing['billing_enabled']) && !$billing['billing_enabled']) return;
+        $allowances = !empty($billing['allowances']) && is_array($billing['allowances']) ? $billing['allowances'] : array();
+        ?>
+        <div class="nxs-ps-credit-stats" style="margin:18px 0;padding:14px 16px;border:1px solid #dcdcde;border-radius:4px;background:#f8faf8">
+            <h3 style="margin:0 0 10px;font-size:15px"><?php esc_html_e('Publishing credits', 'social-networks-auto-poster-facebook-twitter-g'); ?></h3>
+            <?php if (!$refreshed): ?><p style="margin:0 0 10px;color:#8a5a00"><?php esc_html_e('Could not refresh credit usage. Showing the last available figures.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p><?php endif; ?>
+            <?php if (empty($allowances['managed']) && empty($allowances['direct'])): ?>
+                <p style="margin:0"><?php esc_html_e('Credit usage is not available yet.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
+            <?php else: ?>
+                <div style="overflow-x:auto"><table class="widefat striped" style="width:100%;min-width:460px">
+                    <thead><tr><th scope="col"><?php esc_html_e('Connection', 'social-networks-auto-poster-facebook-twitter-g'); ?></th><th scope="col"><?php esc_html_e('This period', 'social-networks-auto-poster-facebook-twitter-g'); ?></th><th scope="col"><?php esc_html_e('Used', 'social-networks-auto-poster-facebook-twitter-g'); ?></th><th scope="col"><?php esc_html_e('Available now', 'social-networks-auto-poster-facebook-twitter-g'); ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach (array('managed' => __('Premium (Cloud)', 'social-networks-auto-poster-facebook-twitter-g'), 'direct' => __('Standard (Direct)', 'social-networks-auto-poster-facebook-twitter-g')) as $bucket => $label):
+                        $numbers = !empty($allowances[$bucket]) && is_array($allowances[$bucket]) ? $allowances[$bucket] : array();
+                        $limit = isset($numbers['included_limit']) ? max(0, (int) $numbers['included_limit']) : 0;
+                        $used = isset($numbers['included_used']) ? max(0, (int) $numbers['included_used']) : 0;
+                        $remaining = isset($numbers['remaining']) ? max(0, (int) $numbers['remaining']) : 0;
+                        $purchased = isset($numbers['additional_remaining']) ? max(0, (int) $numbers['additional_remaining']) : 0;
+                        ?>
+                        <tr><th scope="row"><?php echo esc_html($label); ?></th><td><?php echo esc_html(number_format_i18n($limit)); ?></td><td><?php echo esc_html(number_format_i18n($used)); ?></td><td><strong><?php echo esc_html(number_format_i18n($remaining)); ?></strong><?php if ($purchased > 0): ?><br><small><?php echo esc_html(sprintf(__('includes %s purchased', 'social-networks-auto-poster-facebook-twitter-g'), number_format_i18n($purchased))); ?></small><?php endif; ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table></div>
+                <?php if (!empty($billing['trial']['status']) && $billing['trial']['status'] === 'not_started' && !empty($billing['can_publish']['managed'])): ?><p class="description" style="margin:10px 0 0"><?php esc_html_e('Trial credits will appear after your first successful publication.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p><?php endif; ?>
+            <?php endif; ?>
+        </div>
+        <?php
     }
 
     private static function action_button($action, $label, $class = 'button', $confirm = false, $new_tab = false)
@@ -1314,26 +1586,7 @@ class NXS_PostSocial_Integration
 
     private static function open_dashboard()
     {
-        if (!NXS_PostSocial_State::connected()) wp_die(esc_html__('Post.Social is not connected.', 'social-networks-auto-poster-facebook-twitter-g'));
-        $state = NXS_PostSocial_State::all();
-        if (empty($state['account_type']) || $state['account_type'] !== 'temporary') {
-            wp_redirect(self::safe_web_url(NXS_POSTSOCIAL_WEB_URL . '/login'));
-            exit;
-        }
-        $result = (new NXS_PostSocial_Api())->request('POST', 'temporary-login', array('project_id' => $state['project_id']));
-        if (empty($result['ok']) && !empty($result['error']['code']) && $result['error']['code'] === 'login_required') {
-            NXS_PostSocial_State::update(array('account_type' => 'regular'));
-            wp_redirect(self::safe_web_url(NXS_POSTSOCIAL_WEB_URL . '/login'));
-            exit;
-        }
-        $url = !empty($result['data']['login_url']) ? self::safe_web_url($result['data']['login_url']) : '';
-        if (!empty($result['ok']) && $url !== '' && wp_parse_url($url, PHP_URL_PATH) === '/snap/temporary-login') {
-            nocache_headers();
-            wp_redirect($url, 302, 'SNAP');
-            exit;
-        }
-        wp_safe_redirect(admin_url('admin.php?page=nxssnap-postsocial&nxs_ps_dashboard_error=1'));
-        exit;
+        NXS_PostSocial_Premium::redirect_login('dashboard');
     }
 
     public static function ajax_start()
@@ -1717,6 +1970,8 @@ class NXS_PostSocial_Integration
             'supported_networks' => $supported_networks['ok'] && !empty($supported_networks['data']['data']) ? array_values($supported_networks['data']['data']) : array(),
             'supported_networks_refreshed_at' => $supported_networks['ok'] ? gmdate('c') : '',
             'billing' => $billing['ok'] ? $billing['data'] : array(),
+            'billing_checked_at' => $billing['ok'] ? time() : 0,
+            'billing_refresh_ok' => !empty($billing['ok']),
             'compatibility' => $compatibility,
             'last_contact_at' => gmdate('c'),
             'last_error' => array(),
@@ -2120,9 +2375,10 @@ class NXS_PostSocial_Integration
         if (function_exists('wp_clear_scheduled_hook')) wp_clear_scheduled_hook(self::JOB_HOOK, array($job_id));
         self::process_job($job_id);
         $job = self::get_job($job_id);
-        $terminal = array('published', 'partially_published', 'failed', 'cancelled', 'expired', 'retrying');
         $deadline = microtime(true) + ($wait_for_terminal ? 20 : 0);
-        while ($wait_for_terminal && $job && !empty($job['remote_id']) && !in_array($job['status'], $terminal, true) && microtime(true) < $deadline) {
+        while ($wait_for_terminal && $job && !empty($job['remote_id']) && $job['status'] !== 'retrying'
+            && !self::remote_result_terminal(!empty($job['result_json']) ? json_decode($job['result_json'], true) : array(), $job['status'])
+            && microtime(true) < $deadline) {
             usleep(2000000);
             if (function_exists('wp_clear_scheduled_hook')) wp_clear_scheduled_hook(self::POLL_HOOK, array($job_id));
             self::poll_job($job_id, false);
@@ -2150,6 +2406,8 @@ class NXS_PostSocial_Integration
             $message = sprintf(__('SUCCESS: Post.Social confirmed that the %1$s was published to %2$s (job #%3$d).', 'social-networks-auto-poster-facebook-twitter-g'), $kind, $account_name, $job_id);
             $remote_url = self::job_result_remote_url($job);
             if ($remote_url !== '') $message .= ' ' . sprintf(__('Published post: %s', 'social-networks-auto-poster-facebook-twitter-g'), $remote_url);
+        } elseif (!empty($job['last_error_code']) && $job['last_error_code'] === 'insufficient_managed_credits' && in_array($status, array('on_hold', 'credit_hold', 'partially_published'), true)) {
+            $message = sprintf(__('Post.Social paused the %1$s for %2$s (job #%3$d) because Managed publication credits have run out. Any destinations already published remain published.', 'social-networks-auto-poster-facebook-twitter-g'), $kind, $account_name, $job_id);
         } elseif ($status === 'partially_published') {
             $message = sprintf(__('Post.Social only partially published the %1$s to %2$s (job #%3$d). %4$s', 'social-networks-auto-poster-facebook-twitter-g'), $kind, $account_name, $job_id, $error);
         } elseif ($status === 'retrying') {
@@ -2195,7 +2453,7 @@ class NXS_PostSocial_Integration
     {
         if (!$job || !function_exists('nxs_LogIt') || $message === '') return;
         $status = sanitize_key($job['status']);
-        $type = $status === 'published' ? 'S' : (in_array($status, array('failed', 'cancelled', 'expired', 'partially_published', 'retrying'), true) ? 'E' : 'I');
+        $type = $status === 'published' ? 'S' : (in_array($status, array('failed', 'cancelled', 'expired', 'partially_published', 'retrying'), true) || (!empty($job['last_error_code']) && $job['last_error_code'] === 'insufficient_managed_credits') ? 'E' : 'I');
         $name = !empty($account['nName']) ? sanitize_text_field($account['nName']) : sanitize_text_field($network_code);
         nxs_LogIt($type, $is_test ? 'Post.Social Test' : 'Post.Social', $name, sanitize_text_field($network_code), $message, 'Job #' . (int) $job['id']);
     }
@@ -2282,7 +2540,9 @@ class NXS_PostSocial_Integration
         }
         $remote_type = $mode === 'scheduled' ? 'schedule' : 'publication_batch';
         $status = isset($result['data']['status']) ? sanitize_key($result['data']['status']) : 'accepted';
-        $terminal = in_array($status, array('published', 'partially_published', 'failed', 'cancelled', 'expired'), true);
+        $terminal = self::remote_result_terminal($result['data'], $status);
+        $credit_hold = self::remote_result_on_hold($result['data'], $status) && NXS_PostSocial_Premium::managed_credits_exhausted(NXS_PostSocial_Premium::refresh_billing(5));
+        $credit_message = $credit_hold ? NXS_PostSocial_Premium::credits_message() : null;
         $wpdb->update(self::table(), array(
             'status' => $status,
             'remote_type' => $remote_type,
@@ -2290,10 +2550,11 @@ class NXS_PostSocial_Integration
             'result_json' => wp_json_encode($result['data']),
             'attempts' => (int) $job['attempts'] + 1,
             'next_poll_at' => $terminal ? null : gmdate('Y-m-d H:i:s', time() + max(5, (int) (isset($result['data']['next_poll_after']) ? $result['data']['next_poll_after'] : 5))),
-            'last_error_code' => null,
-            'last_error_message' => null,
+            'last_error_code' => $credit_hold ? 'insufficient_managed_credits' : null,
+            'last_error_message' => $credit_message,
             'updated_at' => current_time('mysql', true),
         ), array('id' => $job_id));
+        if ($credit_hold) self::log_credit_hold(array_merge($job, array('status' => $status, 'last_error_code' => 'insufficient_managed_credits', 'last_error_message' => $credit_message)));
         if (!$terminal) wp_schedule_single_event(time() + 5, self::POLL_HOOK, array((int) $job_id));
     }
 
@@ -2301,7 +2562,7 @@ class NXS_PostSocial_Integration
     {
         global $wpdb;
         $job = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . self::table() . ' WHERE id=%d', $job_id), ARRAY_A);
-        if (!$job || empty($job['remote_id']) || in_array($job['status'], array('published', 'partially_published', 'failed', 'cancelled', 'expired'), true)) {
+        if (!$job || empty($job['remote_id']) || self::remote_result_terminal(!empty($job['result_json']) ? json_decode($job['result_json'], true) : array(), $job['status'])) {
             return;
         }
         $path = $job['remote_type'] === 'schedule' ? 'schedules/' : 'publications/';
@@ -2311,15 +2572,20 @@ class NXS_PostSocial_Integration
             return;
         }
         $status = isset($result['data']['status']) ? sanitize_key($result['data']['status']) : 'accepted';
-        $terminal = in_array($status, array('published', 'partially_published', 'failed', 'cancelled', 'expired'), true);
+        $terminal = self::remote_result_terminal($result['data'], $status);
+        $credit_hold = self::remote_result_on_hold($result['data'], $status) && NXS_PostSocial_Premium::managed_credits_exhausted(NXS_PostSocial_Premium::refresh_billing(5));
+        $credit_message = $credit_hold ? NXS_PostSocial_Premium::credits_message() : null;
         $delay = max(5, min(300, (int) (isset($result['data']['next_poll_after']) ? $result['data']['next_poll_after'] : 30)));
         $wpdb->update(self::table(), array(
             'status' => $status,
             'next_poll_at' => $terminal ? null : gmdate('Y-m-d H:i:s', time() + $delay),
             'result_json' => wp_json_encode($result['data']),
+            'last_error_code' => $credit_hold ? 'insufficient_managed_credits' : null,
+            'last_error_message' => $credit_message,
             'updated_at' => current_time('mysql', true),
         ), array('id' => $job_id));
-        $updated_job = array_merge($job, array('status' => $status, 'next_poll_at' => $terminal ? null : gmdate('Y-m-d H:i:s', time() + $delay), 'result_json' => wp_json_encode($result['data']), 'updated_at' => current_time('mysql', true)));
+        $updated_job = array_merge($job, array('status' => $status, 'next_poll_at' => $terminal ? null : gmdate('Y-m-d H:i:s', time() + $delay), 'result_json' => wp_json_encode($result['data']), 'last_error_code' => $credit_hold ? 'insufficient_managed_credits' : null, 'last_error_message' => $credit_message, 'updated_at' => current_time('mysql', true)));
+        if ($credit_hold && (empty($job['last_error_code']) || $job['last_error_code'] !== 'insufficient_managed_credits')) self::log_credit_hold($updated_job);
         if ($terminal) {
             self::mark_permission_failure($result['data']);
             if ($log_terminal) {
@@ -2335,10 +2601,48 @@ class NXS_PostSocial_Integration
         }
     }
 
+    private static function log_credit_hold($job)
+    {
+        $snapshot = !empty($job['payload_json']) ? json_decode($job['payload_json'], true) : array();
+        $source = !empty($snapshot['source']) && is_array($snapshot['source']) ? $snapshot['source'] : array();
+        $network = !empty($source['snap_network_code']) ? $source['snap_network_code'] : '';
+        $account = array('nName' => !empty($source['snap_account_name']) ? $source['snap_account_name'] : $network);
+        self::job_result_message($job, $network, $account, !empty($job['action_id']) && strpos($job['action_id'], '-test-') !== false);
+    }
+
+    private static function remote_result_terminal($data, $status)
+    {
+        if (!in_array($status, array('published', 'partially_published', 'failed', 'cancelled', 'expired'), true)) return false;
+        if (!empty($data['results']) && is_array($data['results'])) {
+            foreach ($data['results'] as $destination) {
+                if (isset($destination['terminal']) && !$destination['terminal']) return false;
+            }
+        }
+        return true;
+    }
+
+    private static function remote_result_on_hold($data, $status)
+    {
+        if (in_array($status, array('on_hold', 'credit_hold'), true)) return true;
+        if (!empty($data['results']) && is_array($data['results'])) {
+            foreach ($data['results'] as $destination) {
+                if (!empty($destination['status']) && in_array(sanitize_key($destination['status']), array('on_hold', 'credit_hold'), true)) return true;
+            }
+        }
+        return false;
+    }
+
     private static function retry_or_fail($job, $result, $polling = false)
     {
         $error = !empty($result['error']) ? $result['error'] : array();
         $snapshot = !empty($job['payload_json']) ? json_decode($job['payload_json'], true) : array();
+        if (!$polling && empty($job['remote_id']) && (int) $result['status'] === 402
+            && NXS_PostSocial_Premium::managed_credits_exhausted(NXS_PostSocial_Premium::refresh_billing(5))) {
+            $message = __('Post.Social did not accept this publication because Managed publication credits have run out. Add credits and retry the post.', 'social-networks-auto-poster-facebook-twitter-g');
+            self::fail_job((int) $job['id'], 'insufficient_managed_credits', $message);
+            self::log_credit_hold(array_merge($job, array('status' => 'failed', 'last_error_code' => 'insufficient_managed_credits', 'last_error_message' => $message)));
+            return;
+        }
         $is_unsent_test = !$polling && empty($job['remote_id']) && !empty($snapshot['source']['type']) && $snapshot['source']['type'] === 'manual';
         if ($is_unsent_test) {
             self::fail_job((int) $job['id'], isset($error['code']) ? $error['code'] : 'test_submission_failed', isset($error['message']) ? $error['message'] : __('Post.Social rejected the test publication.', 'social-networks-auto-poster-facebook-twitter-g'));

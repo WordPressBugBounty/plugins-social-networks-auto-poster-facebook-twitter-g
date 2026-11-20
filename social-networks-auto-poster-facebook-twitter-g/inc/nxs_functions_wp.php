@@ -625,12 +625,9 @@ if (!function_exists('nxs_snap_render_trial_notice')) { function nxs_snap_render
   if (!class_exists('NXS_PostSocial_Integration')) return null;
   $message = NXS_PostSocial_Integration::trial_notice_text($value);
   if (strpos($message, 'Publishing paused: Your Post.Social trial has ended.') === false) return null;
-  $state = NXS_PostSocial_State::all();
-  $url = !empty($state['billing']['manage_url']) ? $state['billing']['manage_url'] : 'https://post.social/pricing';
-  if (!nxs_validate_remote_url($url, true)) $url = 'https://post.social/pricing';
   $html = esc_html($message);
   $html = str_replace('Publishing paused:', '<strong>Publishing paused:</strong>', $html);
-  return str_replace('View Plans →', '<a href="'.esc_url($url).'" target="_blank" rel="noopener noreferrer">View Plans &rarr;</a>', $html);
+  return str_replace('View Plans →', '<button type="submit" form="nxs-postsocial-billing-form" class="button-link">View Plans &rarr;</button>', $html);
 }}
 
 

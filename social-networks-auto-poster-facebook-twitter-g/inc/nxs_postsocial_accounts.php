@@ -247,12 +247,11 @@ class NXS_PostSocial_Accounts
         $state = NXS_PostSocial_State::all();
         $billing = !empty($state['billing']) && is_array($state['billing']) ? $state['billing'] : array();
         if (empty($billing['trial']['status']) || sanitize_key($billing['trial']['status']) !== 'expired' || !empty($billing['subscription']['active'])) return false;
-        $plans_url = !empty($billing['manage_url']) && nxs_validate_remote_url($billing['manage_url'], true) ? $billing['manage_url'] : 'https://post.social/pricing';
         ?>
         <div class="nxs-ps-trial-ended" style="box-sizing:border-box;background:#fff;border:1px solid #c3c4c7;border-left:4px solid #008a20;border-radius:4px;padding:16px 18px;margin:16px 0;max-width:740px;font-size:13px;line-height:1.5">
             <p style="margin:0 0 8px;font-size:14px;line-height:1.4"><strong><?php esc_html_e("Your free trial has ended, but you're all set to keep publishing!", 'social-networks-auto-poster-facebook-twitter-g'); ?></strong></p>
             <p style="margin:0 0 14px;font-size:13px;line-height:1.5"><?php esc_html_e('Your social accounts and settings are still here. Simply choose a Post.Social plan to resume automatic publishing right where you left off.', 'social-networks-auto-poster-facebook-twitter-g'); ?></p>
-            <a href="<?php echo esc_url($plans_url); ?>" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;box-sizing:border-box;min-height:40px;padding:8px 16px;background:#008a20;color:#fff!important;border:1px solid #006b18;border-radius:4px;text-decoration:none;font-size:13px;font-weight:600;line-height:1.4;box-shadow:none"><?php esc_html_e('Continue Publishing →', 'social-networks-auto-poster-facebook-twitter-g'); ?></a>
+            <?php NXS_PostSocial_Premium::render_billing_button(__('Continue Publishing →', 'social-networks-auto-poster-facebook-twitter-g'), 'nxs-ps-billing-action', '', 'display:inline-flex;align-items:center;box-sizing:border-box;min-height:40px;padding:8px 16px;background:#008a20;color:#fff;border:1px solid #006b18;border-radius:4px;font-family:inherit;font-size:13px;font-weight:600;line-height:1.4;box-shadow:none;cursor:pointer'); ?>
         </div>
         <?php
         return true;

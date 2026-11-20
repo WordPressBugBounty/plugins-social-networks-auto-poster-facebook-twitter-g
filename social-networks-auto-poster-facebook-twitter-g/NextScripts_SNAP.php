@@ -4,13 +4,13 @@ Plugin Name: NextScripts: Social Networks Auto-Poster
 Plugin URI: https://www.nextscripts.com/social-networks-auto-poster-for-wordpress
 Description: This plugin automatically publishes posts from your blog to your social media accounts on X/Twitter, Facebook, Telegram, LinkedIn, and more networks.
 Author: NextScripts
-Version: 4.5.1
+Version: 4.5.2
 Author URI: https://www.nextscripts.com
 Text Domain: social-networks-auto-poster-facebook-twitter-g
 Copyright 2012-2026  NextScripts Corp
 */
 
-const NextScripts_SNAP_Version = '4.5.1'; const NextScripts_SNAP_Version_Date = 'Nov 17, 2026';
+const NextScripts_SNAP_Version = '4.5.2'; const NextScripts_SNAP_Version_Date = 'Nov 19, 2026';
 require_once "inc/nxs_functions_wp.php"; if(!defined( 'NXSSNAP_BASENAME' ) ) define( 'NXSSNAP_BASENAME', plugin_basename( __FILE__ ) );
 
 if (true===nxs_doSystemInitCheck()) {  // error_reporting(E_ALL); ini_set('display_errors', '1');

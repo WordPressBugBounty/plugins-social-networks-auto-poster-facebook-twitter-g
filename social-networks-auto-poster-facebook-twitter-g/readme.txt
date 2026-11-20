@@ -3,9 +3,9 @@ Contributors: NextScripts, okapy
 Donate link: https://www.nextscripts.com/social-networks-auto-poster-for-wordpress
 Tags: autopost, social networks, social media, sharing, repost
 Requires at least: 6.0
-Tested up to: 7.1.4
+Tested up to: 7.1.5
 Requires PHP: 7.4
-Stable tag: 4.5.1
+Stable tag: 4.5.2
 License: GPLv2 or later
 
 Automatically publishes blog posts to profiles, pages, groups, and communities across supported social networks.
@@ -155,6 +155,11 @@ Review the Post.Social [Terms of Service](https://post.social/terms) and [Privac
 * *Version 3.0* — Auto-repost existing posts, autoposting query, image selector, Reddit support.
 * *Version 2.0* — Comment auto-import, Dreamwidth, Instapaper, LiveJournal support.
 * *Version 1.0* — Initial release.
+
+= 4.5.2 [19/11/2026] =
+* Improved Post.Social credit handling: clearer publishing errors and notices when credits run out, plus current-period credit usage on the Cloud page.
+* Added one-click authenticated access to the correct Post.Social Dashboard and Billing account for both temporary and regular connections.
+* Improved the credit notice layout and made it dismissible to the SNAP sidebar.
 
 = 4.5.1 [17/11/2026] =
 * Updated VK authorization with your own application to VK ID OAuth 2.1, using PKCE and renewable access tokens.
@@ -528,7 +533,7 @@ Here: <a href="https://www.nextscripts.com/snap-wp-changelog.txt">https://www.ne
 
 == Upgrade Notice ==
 
-= 4.5.1 =
+= 4.5.2 =
 Just replace plugin files, the rest will be updated automatically.
 
 == Other/Copyrights ==
